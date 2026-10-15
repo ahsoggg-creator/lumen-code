@@ -1,0 +1,18 @@
+[
+  {
+    "id": "hello-world",
+    "name": "Hello World",
+    "description": "Минимальный пример: команда, горячая клавиша, пункт в строке состояния.",
+    "author": "Lumen Code",
+    "repo": "ahsoggg-creator/lumen-code",
+    "path": "examples/plugins/hello-world"
+  },
+  {
+    "id": "pomodoro",
+    "name": "Pomodoro",
+    "description": "Таймер помодоро в строке состояния.",
+    "author": "Lumen Code",
+    "repo": "ahsoggg-creator/lumen-code",
+    "path": "examples/plugins/pomodoro"
+  }
+]

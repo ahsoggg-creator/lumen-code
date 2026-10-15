@@ -1,0 +1,9 @@
+{
+  "id": "hello-world",
+  "name": "Hello World",
+  "version": "1.0.0",
+  "description": "Минимальный пример: команда, горячая клавиша, пункт в строке состояния.",
+  "author": "Lumen Code",
+  "main": "main.js",
+  "permissions": []
+}

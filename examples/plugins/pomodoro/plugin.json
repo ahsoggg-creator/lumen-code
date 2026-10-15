@@ -1,0 +1,13 @@
+{
+  "id": "pomodoro",
+  "name": "Pomodoro",
+  "version": "1.0.0",
+  "description": "Таймер помодоро в строке состояния: 25 минут работы, 5 минут отдыха.",
+  "author": "Lumen Code",
+  "main": "main.js",
+  "permissions": [],
+  "settings": [
+    { "key": "work", "type": "number", "default": 25, "group": "Pomodoro", "label": "Минут работы", "min": 1, "max": 120 },
+    { "key": "rest", "type": "number", "default": 5, "group": "Pomodoro", "label": "Минут отдыха", "min": 1, "max": 60 }
+  ]
+}
