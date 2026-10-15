@@ -102,8 +102,12 @@ export const SCHEMA: SettingDef[] = [
   { key: 'plugins.disabled', type: 'array', default: [], group: 'Плагины', label: 'Отключённые плагины' },
   { key: 'plugins.registry', type: 'string', default: 'https://raw.githubusercontent.com/ahsoggg-creator/lumen-code/main/registry/plugins.json', group: 'Плагины', label: 'Каталог плагинов (URL)' },
 
+  { key: 'debug.justMyCode', type: 'boolean', default: true, group: 'Отладка', label: 'Python: отлаживать только свой код', desc: 'Не заходить внутрь библиотек.' },
+  { key: 'debug.exceptions', type: 'enum', default: 'uncaught', group: 'Отладка', label: 'Останавливаться на исключениях', options: [{ value: 'none', label: 'никогда' }, { value: 'uncaught', label: 'только необработанные' }, { value: 'raised', label: 'на всех' }] },
+  { key: 'debug.args', type: 'string', default: '', group: 'Отладка', label: 'Аргументы программы (Python)' },
+  { key: 'debug.adapters', type: 'object', default: {}, group: 'Отладка', label: 'Свои отладчики (DAP)', desc: '{"go": {"kind":"stdio","command":"dlv","args":["dap"],"request":"launch","adapterID":"go","body":{"mode":"debug","program":"${file}"}}}' },
   { key: 'search.maxResults', type: 'number', default: 5000, group: 'Поиск', label: 'Максимум результатов', min: 100, max: 50000, step: 100 },
-  { key: 'run.commands', type: 'object', default: {}, group: 'Запуск', label: 'Команды запуска по языкам', desc: 'Например {"lua": "lua \\"${file}\\""}. Переменные: ${file}, ${dir}, ${python}, ${workspace}.' },
+  { key: 'run.commands', type: 'object', default: {}, group: 'Запуск', label: 'Свои команды запуска', desc: 'По расширению или языку: {"lua": "lua \\"${file}\\"", "c": ["gcc \\"${file}\\" -o \\"${out}\\"", "\\"${out}\\""]}. Переменные: ${file} ${dir} ${name} ${out} ${python} ${workspace}.' },
   { key: 'keybindings', type: 'object', default: {}, group: 'Клавиши', label: 'Сочетания клавиш', desc: '{"ctrl+alt+r": "workbench.reload", "ctrl+b": ""} — пустая строка отвязывает.' },
 ];
 

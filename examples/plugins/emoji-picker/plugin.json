@@ -1,0 +1,9 @@
+{
+  "id": "emoji-picker",
+  "name": "Эмодзи",
+  "version": "1.0.0",
+  "description": "Вставка эмодзи из списка с поиском (Ctrl+Alt+E).",
+  "author": "Lumen Code",
+  "main": "main.js",
+  "permissions": []
+}

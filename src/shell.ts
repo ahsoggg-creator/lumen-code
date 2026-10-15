@@ -100,7 +100,7 @@ class Shell {
     this.workbench.append(this.activity, this.sidebar, sash1, this.main, sash2, this.sidebar2);
     this.root.append(this.titlebar, this.workbench, this.statusbar);
     this.applyLayout();
-    window.addEventListener('mousedown', (e) => { if (!(e.target as HTMLElement).closest('.menubar')) this.closeMenubar(); });
+    window.addEventListener('mousedown', (e) => { if (!(e.target as HTMLElement | null)?.closest?.('.menubar')) this.closeMenubar(); });
     return this.root;
   }
 
@@ -152,6 +152,8 @@ class Shell {
     const logo = h('span.logo', { innerHTML: icon('logo', 18), 'data-tauri-drag-region': '' });
     const cc = h('button.command-center', { title: 'Быстрый поиск (Ctrl+P)', onclick: () => void commands.execute('palette.quickOpen') }, h('span', { innerHTML: icon('search', 13) }), this.centerText);
     this.titleRight.append(
+      this.tbToggle('play', 'Запустить файл (Ctrl+F5)', 'run.file'),
+      this.tbToggle('bug', 'Отладка (F5)', 'debug.start'),
       this.tbToggle('sidebar', 'Боковая панель (Ctrl+B)', 'view.toggleSidebar'),
       this.tbToggle('panel', 'Нижняя панель (Ctrl+J)', 'view.togglePanel'),
       this.tbToggle('sidebarRight', 'Чат с ИИ (Ctrl+Alt+I)', 'ai.toggleChat'),

@@ -14,5 +14,29 @@
     "author": "Lumen Code",
     "repo": "ahsoggg-creator/lumen-code",
     "path": "examples/plugins/pomodoro"
+  },
+  {
+    "id": "lorem-ipsum",
+    "name": "Lorem Ipsum",
+    "description": "Заглушечный текст: абзацы, предложения, слова.",
+    "author": "Lumen Code",
+    "repo": "ahsoggg-creator/lumen-code",
+    "path": "examples/plugins/lorem-ipsum"
+  },
+  {
+    "id": "quick-notes",
+    "name": "Быстрые заметки",
+    "description": "Боковая панель-блокнот с автосохранением.",
+    "author": "Lumen Code",
+    "repo": "ahsoggg-creator/lumen-code",
+    "path": "examples/plugins/quick-notes"
+  },
+  {
+    "id": "emoji-picker",
+    "name": "Эмодзи",
+    "description": "Вставка эмодзи с поиском (Ctrl+Alt+E).",
+    "author": "Lumen Code",
+    "repo": "ahsoggg-creator/lumen-code",
+    "path": "examples/plugins/emoji-picker"
   }
 ]

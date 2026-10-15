@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod dap;
 mod fsx;
 mod git;
 mod net;
@@ -36,6 +37,7 @@ fn main() {
         .manage(tasks::Tasks::default())
         .manage(net::Streams::default())
         .manage(watch::Watch::default())
+        .manage(dap::Daps::default())
         .setup(|app| {
             if std::env::var_os("LUMEN_HEADLESS").is_some() {
                 if let Some(w) = app.get_webview_window("main") {
@@ -58,6 +60,13 @@ fn main() {
             fsx::path_exists,
             fsx::reveal_in_explorer,
             fsx::open_external,
+            fsx::open_path,
+            fsx::refresh_env,
+            dap::dap_connect,
+            dap::dap_spawn,
+            dap::dap_send,
+            dap::dap_close,
+            dap::free_port,
             search::search_text,
             search::replace_in_files,
             search::list_files,

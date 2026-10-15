@@ -34,6 +34,7 @@ export function registerWorkbench(): void {
     if (p) await docs.save(d, p);
   }, { kb: 'ctrl+shift+s', cat: 'Файл' });
   C('file.saveAll', 'Сохранить все', () => editors.saveAll(), { kb: 'ctrl+k s', cat: 'Файл' });
+  C('file.reopenClosed', 'Восстановить закрытую вкладку', () => editors.reopenClosed(), { kb: 'ctrl+shift+t', cat: 'Файл' });
   C('file.close', 'Закрыть вкладку', () => editors.closeActive(), { kb: 'ctrl+w', cat: 'Файл', term: true });
   C('file.closeAll', 'Закрыть все вкладки', () => editors.closeAll(), { kb: 'ctrl+k ctrl+w', cat: 'Файл' });
   C('file.revert', 'Вернуть файл с диска', async () => { const d = editors.activeDoc(); if (d?.path) await docs.reload(d); }, { cat: 'Файл' });
@@ -192,9 +193,9 @@ export function buildMenus(): void {
   const I = (label: string, command: string, extra: Partial<MenuItem> = {}): MenuItem => ({ label, command, ...extra });
   const sep: MenuItem = { separator: true };
   shell.setMenus([
-    { label: 'Файл', items: () => [I('Новый файл', 'file.newUntitled'), I('Открыть файл…', 'file.open'), I('Открыть папку…', 'workspace.openFolder'),
+    { label: 'Файл', items: () => [I('Новый файл', 'file.newUntitled'), I('Новый файл из шаблона…', 'file.newFromTemplate'), I('Новый проект…', 'file.newProject'), I('Восстановить закрытую вкладку', 'file.reopenClosed'), I('Открыть файл…', 'file.open'), I('Открыть папку…', 'workspace.openFolder'),
       { label: 'Открыть недавнюю', submenu: recentFolders().length ? recentFolders().slice(0, 10).map((p) => ({ label: p, run: () => void openFolder(p) })) : [{ label: 'Нет недавних', disabled: true }] },
-      I('Закрыть папку', 'workspace.close'), sep, I('Сохранить', 'file.save'), I('Сохранить как…', 'file.saveAs'), I('Сохранить все', 'file.saveAll'), sep,
+      I('Закрыть папку', 'workspace.close'), sep, I('Сохранить', 'file.save'), I('Сохранить как…', 'file.saveAs'), I('Сохранить все', 'file.saveAll'), I('Сохранить как шаблон…', 'file.saveAsTemplate'), sep,
       I('Закрыть вкладку', 'file.close'), I('Закрыть все вкладки', 'file.closeAll'), sep,
       { label: 'Настройки', submenu: [I('Настройки', 'workbench.openSettings'), I('settings.json', 'workbench.openSettingsJson'), I('Сочетания клавиш', 'workbench.openKeybindings'), I('Свой CSS', 'workbench.openCustomCss'), I('Выбрать тему', 'workbench.pickTheme'), I('Настройки проекта', 'workbench.openWorkspaceSettings')] },
       sep, I('Выход', 'app.quit')] },
@@ -207,7 +208,10 @@ export function buildMenus(): void {
       { label: 'Оформление', submenu: [I('Боковая панель', 'view.toggleSidebar'), I('Нижняя панель', 'view.togglePanel'), I('Режим концентрации', 'view.zen'), I('Сменить сторону панели', 'view.sidebarSide'), I('Панель действий', 'view.activityBar', { checked: cfg('workbench.activityBar') }), I('Строка состояния', 'view.statusBar', { checked: cfg('workbench.statusBar') }), I('Навигационная цепочка', 'view.breadcrumbs', { checked: cfg('workbench.breadcrumbs') })] },
       I('Разделить редактор', 'editor.splitRight'), I('Перенос строк', 'view.wordWrap', { checked: cfg('editor.wordWrap') !== 'off' }), I('Миникарта', 'view.minimap', { checked: cfg('editor.minimap') }), sep, I('Увеличить масштаб', 'view.zoomIn'), I('Уменьшить масштаб', 'view.zoomOut'), I('Сбросить масштаб', 'view.zoomReset')] },
     { label: 'Переход', items: () => [I('К файлу…', 'palette.quickOpen'), I('К строке…', 'palette.gotoLine'), I('К символу…', 'palette.symbols'), I('К определению', 'edit.goDefinition', { keybinding: 'f12' }), sep, I('Следующая вкладка', 'editor.next'), I('Предыдущая вкладка', 'editor.prev')] },
-    { label: 'Запуск', items: () => [I('Запустить файл', 'run.file'), I('Выбрать интерпретатор Python…', 'python.select'), I('Пакеты Python', 'python.packages')] },
+    { label: 'Запуск', items: () => [I('Начать отладку', 'debug.start'), I('Запустить без отладки', 'run.file'), I('Остановить', 'debug.stop'), I('Перезапустить отладку', 'debug.restart'), sep,
+      I('Шаг с обходом', 'debug.stepOver'), I('Шаг внутрь', 'debug.stepInto'), I('Шаг наружу', 'debug.stepOut'), I('Продолжить', 'debug.continue'), I('Пауза', 'debug.pause'), sep,
+      I('Поставить / убрать точку останова', 'debug.toggleBreakpoint'), I('Условная точка останова…', 'debug.addConditional'), I('Убрать все точки останова', 'debug.removeAllBreakpoints'), I('Добавить наблюдение…', 'debug.addWatch'), sep,
+      I('Консоль отладки', 'debug.openConsole'), I('Открыть в браузере', 'run.openInBrowser'), sep, I('Выбрать интерпретатор Python…', 'python.select'), I('Пакеты Python', 'python.packages'), I('Языки и компиляторы…', 'toolchains.manage'), I('Установить отладчик debugpy', 'debug.installDebugpy')] },
     { label: 'Терминал', items: () => [I('Новый терминал', 'terminal.new'), I('Показать/скрыть', 'terminal.toggle'), I('Очистить', 'terminal.clear'), I('Закрыть текущий', 'terminal.kill')] },
     { label: 'Справка', items: () => [I('Приветствие', 'help.welcome'), I('Документация', 'help.docs'), I('Сообщить о проблеме', 'help.issue'), sep, I('Проверить обновления…', 'help.checkUpdates'), I('О программе', 'help.about')] },
   ]);

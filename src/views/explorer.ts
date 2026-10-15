@@ -1,6 +1,6 @@
 import { app } from '../app';
 import { commands } from '../commands';
-import { docs, editors } from '../editor';
+import { docs, editors, languageFor } from '../editor';
 import { gitState } from '../gitstate';
 import { fileIconInfo, icon } from '../icons';
 import { errText, ipc, type Entry } from '../ipc';
@@ -24,6 +24,13 @@ export function registerExplorer(openFolder: () => void, recent: () => string[],
       let rows: Row[] = [];
       let pending: Row | null = null;
       let clip: { paths: string[]; cut: boolean } | null = null;
+      let compareA: string | null = null;
+      async function compareWith(e: Entry): Promise<void> {
+        if (!compareA || compareA === e.path) { compareA = e.path; notify(`«${basename(e.path)}» выбран. Теперь «Сравнить с…» на втором файле.`); return; }
+        const [a, b] = await Promise.all([ipc.readFile(compareA), ipc.readFile(e.path)]);
+        editors.openDiff({ key: `${compareA}|${e.path}`, title: `${basename(compareA)} ↔ ${basename(e.path)}`, original: a.content, modifiedText: b.content, language: languageFor(e.path) });
+        compareA = null;
+      }
 
       const empty = h('div.explorer-empty');
       const scroller = h('div.tree-scroll', { tabIndex: 0 });
@@ -303,6 +310,7 @@ export function registerExplorer(openFolder: () => void, recent: () => string[],
       function menuFor(e: Entry | null): MenuItem[] {
         const dirTarget = targetDir(e);
         const items: MenuItem[] = [
+          { label: 'Новый файл из шаблона…', icon: 'sparkles', run: () => void commands.execute('file.newFromTemplate', targetDir(e)) },
           { label: 'Новый файл…', icon: 'filePlus', run: () => void startNew(false, e) },
           { label: 'Новая папка…', icon: 'folderPlus', run: () => void startNew(true, e) },
           { separator: true },
@@ -311,6 +319,8 @@ export function registerExplorer(openFolder: () => void, recent: () => string[],
           items.push(
             { label: 'Открыть', disabled: e.is_dir, run: () => void editors.openFile(e.path, { preview: false }) },
             { label: 'Показать в проводнике Windows', run: () => void ipc.reveal(e.path) },
+            { label: 'Открыть программой по умолчанию', disabled: e.is_dir, run: () => void ipc.openPath(e.path) },
+            { label: compareA && compareA !== e.path ? `Сравнить с «${basename(compareA)}»` : 'Выбрать для сравнения', disabled: e.is_dir, run: () => void compareWith(e) },
             { label: 'Открыть в терминале', run: () => void commands.execute('terminal.newAt', e.is_dir ? e.path : dirname(e.path)) },
             { label: 'Найти в папке…', run: () => void commands.execute('search.inFolder', e.is_dir ? e.path : dirname(e.path)) },
             { separator: true },

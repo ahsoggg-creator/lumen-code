@@ -37,6 +37,8 @@ async function boot(): Promise<void> {
     import('./editor'), import('./views/explorer'), import('./views/search'), import('./views/git'), import('./views/python'), import('./views/plugins'), import('./ai/view'),
     import('./panels'), import('./palette'), import('./workbench'), import('./update'), import('./plugins/builtin'), import('./plugins/host'), import('./pages'),
   ]);
+  const { registerBuiltinPlugins2 } = await import('./plugins/builtin2');
+  const [{ registerRun }, { registerTemplates }, { registerDebug }, { registerOutline }] = await Promise.all([import('./run'), import('./templates'), import('./debug/debug'), import('./views/outline')]);
 
   shell.editorHost.append(editors.el);
   editors.init();
@@ -51,11 +53,16 @@ async function boot(): Promise<void> {
   registerPluginsView();
   registerAI();
   registerPanels();
+  registerRun();
+  registerTemplates();
+  registerDebug();
+  registerOutline();
   registerPalette();
   registerWorkbench();
   registerUpdates();
   buildMenus();
   registerBuiltinPlugins();
+  registerBuiltinPlugins2();
   commands.register({ id: 'view.settings.open', title: 'Открыть настройки (страница)', hidden: true, run: () => openSettingsPage() });
 
   installKeyHandler(() => app.focusTerminal, (s) => window.dispatchEvent(new CustomEvent('lumen-chord', { detail: s })));

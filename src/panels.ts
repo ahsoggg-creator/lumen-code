@@ -167,14 +167,22 @@ function closeTerm(t: Term): void {
   if (!terms.length) shell.setPanel(false);
 }
 
-export async function runInTerminal(command: string, opts: { name?: string; cwd?: string; reuse?: boolean } = {}): Promise<void> {
+function chain(kind: 'ps' | 'cmd' | 'sh', cmds: string[]): string {
+  if (kind !== 'ps') return cmds.join(' && ');
+  const parts = cmds.map((c) => (c.startsWith('"') ? `& ${c}` : c));
+  let s = parts[parts.length - 1]!;
+  for (let i = parts.length - 2; i >= 0; i--) s = `${parts[i]}; if ($?) { ${s} }`;
+  return s;
+}
+
+export async function runInTerminal(command: string | string[], opts: { name?: string; cwd?: string; reuse?: boolean } = {}): Promise<void> {
   let t = opts.reuse !== false ? terms.find((x) => x.name === (opts.name ?? 'Запуск') && x.alive) : undefined;
   t ??= (await newTerminal({ name: opts.name ?? 'Запуск', cwd: opts.cwd })) ?? undefined;
   if (!t) return;
   selectTerm(t);
   shell.showPanel('terminal');
   const kind = (PROFILES[t.profile] ?? PROFILES.powershell!).kind;
-  const cmd = kind === 'ps' && command.startsWith('"') ? `& ${command}` : command;
+  const cmd = chain(kind, Array.isArray(command) ? command : [command]);
   if (opts.cwd) {
     const cd = kind === 'cmd' ? `cd /d "${opts.cwd}"` : `cd "${opts.cwd}"`;
     await ipc.termWrite(t.ptyId, `${cd}\r`);

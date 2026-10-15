@@ -19,6 +19,17 @@ writeFileSync(join(work, 'proj', 'main.py'), 'import os\n\ndef greet(name: str) 
 writeFileSync(join(work, 'proj', 'src', 'app.ts'), 'export const x: number = 42;\nexport function add(a: number, b: number) { return a + b; }\n');
 writeFileSync(join(work, 'proj', 'README.md'), '# Demo\n\nSome **markdown**.\n');
 
+// A throw-away venv with debugpy so the debugger test does not touch the user's Python.
+const venv = join(work, 'venv');
+let venvPy = '';
+try {
+  execFileSync('python', ['-m', 'venv', venv], { stdio: 'ignore' });
+  venvPy = join(venv, 'Scripts', 'python.exe');
+  execFileSync(venvPy, ['-m', 'pip', 'install', '-q', 'debugpy', '--disable-pip-version-check'], { stdio: 'ignore', timeout: 180000 });
+  mkdirSync(join(appdata, 'LumenCode'), { recursive: true });
+  writeFileSync(join(appdata, 'LumenCode', 'settings.json'), JSON.stringify({ 'python.interpreter': venvPy }));
+} catch { venvPy = ''; }
+
 const child = spawn(exe, [join(work, 'proj')], {
   env: { ...process.env, APPDATA: appdata, LUMEN_HEADLESS: '1', WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
   stdio: 'ignore',
@@ -65,7 +76,7 @@ try {
   check('tab created', await waitFor('[...document.querySelectorAll(".tab-label")].some(e=>e.textContent==="main.py")'));
   check('syntax highlighting applied', await waitFor('document.querySelectorAll(".monaco-editor .view-lines .mtk1, .monaco-editor .view-lines span[class*=mtk]").length > 5'));
 
-  await ev('[...document.querySelectorAll(".act-btn")][1]?.click()');
+  await ev('document.querySelector(".act-btn[title=\\"Поиск\\"]")?.click()');
   check('search view opens', await waitFor('!!document.querySelector(".search-top")'));
   await ev('document.querySelector(".act-btn[title=\\"Python\\"]")?.click()');
   check('python view opens and finds an interpreter', await waitFor('document.querySelectorAll(".py-interp").length >= 1', 25000), String(await ev('document.querySelectorAll(".py-interp").length')));
@@ -92,6 +103,40 @@ try {
   check('settings page opens', await waitFor('!!document.querySelector(".settings-page .theme-card")'));
   await ev('[...document.querySelectorAll(".theme-card")].find(e=>e.textContent.includes("Tokyo"))?.click()');
   check('theme switches', await waitFor('getComputedStyle(document.documentElement).getPropertyValue("--bg").trim()==="#1a1b26"'));
+
+  // file menu: templates
+  await ev('[...document.querySelectorAll(".menu-btn")].find(b=>b.textContent==="Файл")?.click()');
+  await ev('[...document.querySelectorAll(".menu-item")].find(e=>e.textContent.includes("из шаблона"))?.click()');
+  check('new-file template picker lists languages', await waitFor('[...document.querySelectorAll(".qi-label")].map(e=>e.textContent).filter(t=>["Python","Java","C++","Go","Rust","HTML-страница"].includes(t)).length >= 6'), String(await ev('document.querySelectorAll(".qi-item").length')));
+  await ev('document.querySelector(".qi-overlay")?.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}))');
+  await ev('[...document.querySelectorAll(".menu-btn")].find(b=>b.textContent==="Запуск")?.click()');
+  check('Run menu has debug items', await waitFor('[...document.querySelectorAll(".menu-item")].some(e=>e.textContent.includes("Начать отладку")) && [...document.querySelectorAll(".menu-item")].some(e=>e.textContent.includes("точку останова"))'));
+  await ev('document.body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}))'); await ev('window.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}))');
+
+  // debugger (needs debugpy in the temp venv)
+  if (venvPy) {
+    await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    await ev('[...document.querySelectorAll(".tab")].find(t=>t.textContent.includes("main.py"))?.click()');
+    await sleep(500);
+    const pos = await ev('(() => { const l=[...document.querySelectorAll(".monaco-editor .view-line")].find(e=>e.textContent.indexOf("return")>=0 && e.textContent.indexOf("hello")>=0); if(!l) return null; const r=l.getBoundingClientRect(); return {x:r.left+60,y:r.top+r.height/2}; })()');
+    check('found the line to break on', !!pos, pos ? '' : await ev('JSON.stringify({n:document.querySelectorAll(".view-line").length, t:[...document.querySelectorAll(".view-line")].map(e=>e.textContent).slice(0,8), tab:[...document.querySelectorAll(".tab.active .tab-label")].map(e=>e.textContent)})'));
+    if (pos) {
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pos.x, y: pos.y, button: 'left', clickCount: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pos.x, y: pos.y, button: 'left', clickCount: 1 });
+      const key = async (code, k, vk, mods = 0) => { await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', code, key: k, windowsVirtualKeyCode: vk, modifiers: mods }); await send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k, windowsVirtualKeyCode: vk, modifiers: mods }); };
+      await key('F9', 'F9', 120);
+      check('breakpoint glyph appears (F9)', await waitFor('!!document.querySelector(".bp-glyph")'));
+      await key('F5', 'F5', 116);
+      check('debugger stops on the breakpoint', await waitFor('!!document.querySelector(".dbg-line")', 60000));
+      check('variables panel shows the local "name"', await waitFor('[...document.querySelectorAll(".var-name")].some(e=>e.textContent==="name")', 15000), String(await ev('[...document.querySelectorAll(".var-row")].map(e=>e.textContent).join(" | ")')));
+      check('debug toolbar visible', await ev('!!document.querySelector(".dbg-toolbar") && getComputedStyle(document.querySelector(".dbg-toolbar")).display !== "none"'));
+      await key('F10', 'F10', 121);
+      await sleep(2000);
+      check('step over keeps the session paused', await waitFor('!!document.querySelector(".dbg-line")', 15000));
+      await key('F5', 'F5', 116);
+      check('program finishes and toolbar hides', await waitFor('getComputedStyle(document.querySelector(".dbg-toolbar")).display === "none"', 30000));
+    }
+  } else console.log('SKIP  debugger test (could not build a venv with debugpy)');
 
   // AI panel
   await ev('document.querySelector(".tb-btn[title^=\\"Чат\\"]")?.click()');

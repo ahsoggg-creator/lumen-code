@@ -1,0 +1,9 @@
+{
+  "id": "lorem-ipsum",
+  "name": "Lorem Ipsum",
+  "version": "1.0.0",
+  "description": "Вставляет заглушечный текст: абзацы, предложения, список слов.",
+  "author": "Lumen Code",
+  "main": "main.js",
+  "permissions": []
+}

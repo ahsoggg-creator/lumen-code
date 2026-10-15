@@ -1,6 +1,6 @@
 import { app } from '../app';
 import { commands } from '../commands';
-import { docs, editors, languageFor } from '../editor';
+import { editors } from '../editor';
 import { icon } from '../icons';
 import { ipc, type Interp } from '../ipc';
 import { log, runInTerminal, setPythonResolver } from '../panels';
@@ -8,7 +8,7 @@ import { settings, cfg } from '../settings';
 import { shell } from '../shell';
 import { runTask } from '../tasks';
 import { confirmDialog, inputBox, notify, quickPick, section, showMenu } from '../ui';
-import { Emitter, debounce, dirname, h, join } from '../util';
+import { Emitter, debounce, h, join } from '../util';
 
 interface Pkg { name: string; version: string }
 
@@ -41,10 +41,6 @@ export function selectPython(path: string): void {
 
 const label = (i: Interp): string => `Python ${i.version}${i.is_venv ? ` (${i.path.split('\\').slice(-3, -2)[0]})` : ''}`;
 
-export const DEFAULT_RUN: Record<string, string> = {
-  python: '"${python}" "${file}"', javascript: 'node "${file}"', typescript: 'npx tsx "${file}"', lua: 'lua "${file}"', powershell: '& "${file}"',
-  bat: '"${file}"', go: 'go run "${file}"', rust: 'cargo run', shell: 'bash "${file}"', ruby: 'ruby "${file}"', php: 'php "${file}"',
-};
 
 export function registerPython(): void {
   setPythonResolver(() => currentPython());
@@ -232,20 +228,4 @@ export function registerPython(): void {
   });
   commands.register({ id: 'python.createVenv', title: 'Python: создать виртуальное окружение', category: 'Python', run: () => { shell.showView('python'); } });
   commands.register({ id: 'python.packages', title: 'Python: управление пакетами', category: 'Python', run: () => shell.showView('python') });
-
-  commands.register({
-    id: 'run.file', title: 'Запустить текущий файл', category: 'Запуск', keybinding: 'f5',
-    run: async () => {
-      const d = editors.activeDoc();
-      if (!d) { notify('Нет открытого файла', { kind: 'warn' }); return; }
-      if (d.dirty || !d.path) { if (!(await docs.save(d))) return; }
-      const lang = languageFor(d.path!);
-      const templates = { ...DEFAULT_RUN, ...cfg<Record<string, string>>('run.commands') };
-      const t = templates[lang];
-      if (!t) { notify(`Для языка «${lang}» нет команды запуска. Добавьте её в настройку run.commands.`, { kind: 'warn' }); return; }
-      const python = await effectivePython();
-      const cmd = t.replace(/\$\{file\}/g, d.path!).replace(/\$\{dir\}/g, dirname(d.path!)).replace(/\$\{python\}/g, python).replace(/\$\{workspace\}/g, app.root ?? dirname(d.path!));
-      await runInTerminal(cmd, { name: 'Запуск', cwd: lang === 'rust' ? app.root ?? dirname(d.path!) : dirname(d.path!) });
-    },
-  });
 }

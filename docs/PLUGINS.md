@@ -40,7 +40,7 @@ export function activate(lumen) {
 | `lumen.commands` | `register(id, title, run, {keybinding, category})`, `execute(id, ...args)` |
 | `lumen.window` | `info/warn/error(msg)`, `input({title,value,placeholder})`, `pick(items, {placeholder})`, `confirm(msg)`, `status({text,align,priority,tooltip,command,onClick})` → `{update, dispose}`, `openView(key, title, render(host))`, `addSidebarView({id,title,icon,render(host)})`, `openUntitled(text, lang)` |
 | `lumen.editor` | `active()` → `{path, language, text, selectionText, line, column}`, `getEditor()` (Monaco), `insert`, `replaceSelection`, `replaceAll`, `openFile(path,{line,col})`, `onDidChangeActive`, `onDidSave` |
-| `lumen.workspace` | `root`, `readFile`, `writeFile` (`fs`), `list`, `findFiles`, `exists`, `onDidChangeRoot`, `onDidChangeFiles` |
+| `lumen.workspace` | `root`, `readFile`, `writeFile` (`fs`), `list`, `findFiles`, `search(query,{regex,include,exclude})`, `exists`, `onDidChangeRoot`, `onDidChangeFiles` |
 | `lumen.settings` | `get`, `set`, `onChange`, `contribute([...])` |
 | `lumen.storage` | `get(key)`, `set(key, value)` — личный JSON плагина |
 | `lumen.terminal` | `run(cmd, {name, cwd})` (`exec`) |

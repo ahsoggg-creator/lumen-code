@@ -37,14 +37,14 @@ interface Running { disposables: Disposable[]; mod: Module | null; styleEl?: HTM
 
 const plugins = new Map<string, PluginInfo>();
 const running = new Map<string, Running>();
-const builtins: { manifest: Manifest; activate: (api: LumenApi) => void | Promise<void> }[] = [];
+const builtins: { manifest: Manifest; activate: (api: LumenApi) => unknown }[] = [];
 const listeners = new Set<() => void>();
 export const onPluginsChanged = (fn: () => void): void => { listeners.add(fn); };
 const changed = (): void => listeners.forEach((f) => f());
 
 export const listPlugins = (): PluginInfo[] => [...plugins.values()].sort((a, b) => Number(b.builtin) - Number(a.builtin) || a.manifest.name.localeCompare(b.manifest.name));
 
-export function registerBuiltin(manifest: Manifest, activate: (api: LumenApi) => void | Promise<void>): void {
+export function registerBuiltin(manifest: Manifest, activate: (api: LumenApi) => unknown): void {
   builtins.push({ manifest: { ...manifest, permissions: manifest.permissions ?? [] }, activate });
 }
 
@@ -118,6 +118,7 @@ function makeApi(m: Manifest, track: (d: Disposable) => void, granted: Set<strin
       writeFile: (p: string, text: string) => { need('fs'); return ipc.writeFile(p, text); },
       list: (dir: string) => ipc.readDir(dir),
       findFiles: (root = app.root ?? '') => ipc.listFiles(root),
+      search: (query: string, o: { regex?: boolean; include?: string[]; exclude?: string[]; max?: number } = {}) => ipc.search({ root: app.root ?? '', query, regex: !!o.regex, case: false, word: false, include: o.include ?? [], exclude: o.exclude ?? [], max_results: o.max ?? 2000 }).then((r) => r.files),
       exists: (p: string) => ipc.exists(p),
     },
     settings: {
@@ -146,7 +147,8 @@ function makeApi(m: Manifest, track: (d: Disposable) => void, granted: Set<strin
   };
 }
 
-async function approve(m: Manifest): Promise<boolean> {
+async function approve(m: Manifest, builtin = false): Promise<boolean> {
+  if (builtin) return true;
   const perms = m.permissions ?? [];
   if (!perms.length) return true;
   const map = approvedMap();
@@ -157,16 +159,16 @@ async function approve(m: Manifest): Promise<boolean> {
   return ok;
 }
 
-async function activate(info: PluginInfo, activateFn?: (api: LumenApi) => void | Promise<void>): Promise<void> {
+async function activate(info: PluginInfo, activateFn?: (api: LumenApi) => unknown): Promise<void> {
   const m = info.manifest;
   if (running.has(m.id)) return;
-  if (!(await approve(m))) { info.state = 'disabled'; changed(); return; }
+  if (!(await approve(m, info.builtin))) { info.state = 'disabled'; changed(); return; }
   const run: Running = { disposables: [], mod: null };
   running.set(m.id, run);
   try {
     if (m.settings?.length) contribute(m.settings.map((d) => ({ ...d, key: d.key.includes('.') ? d.key : `${m.id}.${d.key}` })));
     const api = makeApi(m, (d) => run.disposables.push(d), new Set(m.permissions ?? []));
-    if (activateFn) await activateFn(api);
+    if (activateFn) { const r = await activateFn(api); if (typeof r === 'function') run.disposables.push({ dispose: r as () => void }); }
     else if (info.dir) {
       if (m.style) {
         const css = (await ipc.readFile(join(info.dir, m.style))).content;

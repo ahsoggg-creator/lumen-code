@@ -2,6 +2,7 @@ import type * as Mn from 'monaco-editor';
 import { app, monaco as M } from './app';
 import { commands } from './commands';
 import { icon, fileIconInfo } from './icons';
+import { langForPath } from './toolchains';
 import { ipc, errText } from './ipc';
 import { settings, cfg } from './settings';
 import { dialog, notify, showMenu } from './ui';
@@ -254,7 +255,7 @@ function editorOptions(): Mn.editor.IEditorOptions & Mn.editor.IGlobalEditorOpti
     linkedEditing: cfg('editor.linkedEditing'),
     scrollBeyondLastLine: cfg('editor.scrollBeyondLastLine'),
     padding: { top: cfg<number>('editor.padding'), bottom: cfg<number>('editor.padding') },
-    glyphMargin: false,
+    glyphMargin: true,
     lineDecorationsWidth: 10,
     roundedSelection: true,
     automaticLayout: true,
@@ -443,8 +444,11 @@ class Group {
     const btn = (ic: string, title: string, fn: () => void) => h('button.icon-btn', { title, innerHTML: icon(ic, 15), onclick: fn });
     if (t?.kind === 'doc') {
       const lang = t.doc!.model.getLanguageId();
-      if (['python', 'javascript', 'typescript', 'lua', 'powershell', 'bat', 'go', 'rust', 'shell', 'ruby', 'php'].includes(lang) || cfg<Record<string, string>>('run.commands')[lang]) {
-        this.actionsEl.append(btn('play', 'Запустить файл (F5)', () => void commands.execute('run.file')));
+      const l = t.doc!.path ? langForPath(t.doc!.path) : undefined;
+      const userRun = cfg<Record<string, unknown>>('run.commands') ?? {};
+      if (l?.run || l?.runKind || userRun[l?.id ?? lang]) {
+        this.actionsEl.append(btn('play', l?.runKind ? 'Открыть в браузере (Ctrl+F5)' : 'Запустить без отладки (Ctrl+F5)', () => void commands.execute('run.file')));
+        if (l && (l.id === 'python' || (cfg<Record<string, unknown>>('debug.adapters') ?? {})[l.id])) this.actionsEl.append(btn('bug', 'Отладка (F5)', () => void commands.execute('debug.start')));
       }
       if (lang === 'markdown') this.actionsEl.append(btn('eye', 'Предпросмотр (Ctrl+Shift+V)', () => void commands.execute('markdown.preview')));
     }
@@ -669,9 +673,17 @@ class EditorArea {
     return this.groups.reduce((n, g) => n + g.tabs.filter((t) => t.doc === d).length, 0);
   }
 
+  closed: string[] = [];
+
+  async reopenClosed(): Promise<void> {
+    const p = this.closed.pop();
+    if (p) await this.openFile(p, { preview: false });
+  }
+
   private removeTab(g: Group, t: Tab, activateNext: boolean): void {
     const i = g.tabs.indexOf(t);
     if (i < 0) return;
+    if (t.doc?.path && !t.preview) { this.closed.push(t.doc.path); if (this.closed.length > 30) this.closed.shift(); }
     if (g.active === t) g.saveState(t);
     g.tabs.splice(i, 1);
     t.viewDispose?.();

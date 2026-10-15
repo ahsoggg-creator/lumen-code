@@ -290,3 +290,27 @@ mod tests {
         assert_eq!((t.as_str(), e.as_str()), ("a", "utf8bom"));
     }
 }
+
+/// Opens an existing local file with its default program (browser for .html, etc.).
+#[tauri::command(async)]
+pub fn open_path(path: String) -> Result<(), String> {
+    if !Path::new(&path).exists() {
+        return Err(format!("{path}: файл не найден"));
+    }
+    command("rundll32").args(["url.dll,FileProtocolHandler", &path]).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Re-reads PATH from the registry so programs installed after the editor started (winget) become visible.
+#[tauri::command(async)]
+pub fn refresh_env() -> Result<(), String> {
+    let out = command("powershell")
+        .args(["-NoProfile", "-Command", "[Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    let fresh = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    let old = std::env::var("PATH").unwrap_or_default();
+    let mut seen = std::collections::HashSet::new();
+    let merged: Vec<&str> = fresh.split(';').chain(old.split(';')).filter(|p| !p.is_empty() && seen.insert(p.to_ascii_lowercase())).collect();
+    std::env::set_var("PATH", merged.join(";"));
+    Ok(())
+}
