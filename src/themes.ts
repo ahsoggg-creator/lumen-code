@@ -2,7 +2,7 @@ export interface Palette {
   base: string; mantle: string; crust: string; s0: string; s1: string; s2: string; overlay: string; subtext: string; text: string;
   red: string; green: string; yellow: string; blue: string; mauve: string; teal: string; peach: string; pink: string;
 }
-export interface Theme { id: string; name: string; dark: boolean; c: Palette }
+export interface Theme { id: string; name: string; dark: boolean; c: Palette; /** Raw editor rules/colours of an imported VS Code theme; layered over the palette-derived defaults. */ editor?: { rules: { token: string; foreground?: string; background?: string; fontStyle?: string }[]; colors: Record<string, string> } }
 
 const t = (id: string, name: string, dark: boolean, c: Palette): Theme => ({ id, name, dark, c });
 
@@ -49,7 +49,15 @@ export function cssVars(th: Theme, accent: string): Record<string, string> {
   };
 }
 
-export function monacoTheme(th: Theme, accent: string, overrides: Record<string, string> = {}): { base: 'vs' | 'vs-dark'; inherit: boolean; rules: { token: string; foreground?: string; fontStyle?: string }[]; colors: Record<string, string> } {
+type MonacoThemeData = { base: 'vs' | 'vs-dark'; inherit: boolean; rules: { token: string; foreground?: string; background?: string; fontStyle?: string }[]; colors: Record<string, string> };
+
+export function monacoTheme(th: Theme, accent: string, overrides: Record<string, string> = {}): MonacoThemeData {
+  if (!th.editor) return paletteTheme(th, accent, overrides);
+  const b = paletteTheme(th, accent, {});
+  return { base: b.base, inherit: false, rules: [...b.rules, ...th.editor.rules], colors: { ...b.colors, ...th.editor.colors, ...overrides } };
+}
+
+function paletteTheme(th: Theme, accent: string, overrides: Record<string, string>): MonacoThemeData {
   const c = th.c;
   const ac = accentOf(th, accent);
   const r = (token: string, color: string, fontStyle?: string) => ({ token, foreground: hex(color), ...(fontStyle ? { fontStyle } : {}) });

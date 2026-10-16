@@ -279,7 +279,8 @@ export function showMenu(x: number, y: number, items: MenuItem[]): void {
   placeMenu(el, x, y);
   openMenu = el;
   const off = (e: Event) => {
-    if (el.contains(e.target as Node) || (e.target as HTMLElement | null)?.closest?.('.submenu')) return;
+    const t = e.target;
+    if (t instanceof Node && (el.contains(t) || (t as HTMLElement).closest?.('.submenu'))) return;
     closeMenus();
     document.querySelectorAll('.submenu').forEach((s) => s.remove());
     window.removeEventListener('mousedown', off, true);

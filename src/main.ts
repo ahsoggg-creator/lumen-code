@@ -7,7 +7,7 @@ import { ipc, on } from './ipc';
 import { settings } from './settings';
 import { shell } from './shell';
 import { dialog, notify } from './ui';
-import { dirname, join } from './util';
+import { join } from './util';
 
 async function boot(): Promise<void> {
   const root = document.getElementById('app')!;
@@ -38,6 +38,9 @@ async function boot(): Promise<void> {
     import('./panels'), import('./palette'), import('./workbench'), import('./update'), import('./plugins/builtin'), import('./plugins/host'), import('./pages'),
   ]);
   const { registerBuiltinPlugins2 } = await import('./plugins/builtin2');
+  const { registerAssoc } = await import('./assoc');
+  const { registerVsx } = await import('./views/vsx');
+  const { applyAll: applyVscodeExts } = await import('./vscode/ext');
   const [{ registerRun }, { registerTemplates }, { registerDebug }, { registerOutline }] = await Promise.all([import('./run'), import('./templates'), import('./debug/debug'), import('./views/outline')]);
 
   shell.editorHost.append(editors.el);
@@ -57,6 +60,8 @@ async function boot(): Promise<void> {
   registerTemplates();
   registerDebug();
   registerOutline();
+  registerAssoc();
+  registerVsx();
   registerPalette();
   registerWorkbench();
   registerUpdates();
@@ -97,21 +102,31 @@ async function boot(): Promise<void> {
   editors.activeChanged.on(() => saveSession());
 
   // ---- workspace / arguments
-  const arg = app.paths.args[0];
-  let opened = false;
-  if (arg) {
-    const isDir = await ipc.readDir(arg).then(() => true).catch(() => false);
-    if (isDir) { await openFolder(arg); opened = true; }
-    else if (await ipc.exists(arg)) { await openFolder(dirname(arg)); await editors.openFile(arg, { preview: false }); opened = true; }
-  }
+  const openPaths = async (paths: string[], startup: boolean): Promise<boolean> => {
+    let did = false;
+    for (const p of paths) {
+      if (!(await ipc.exists(p))) continue;
+      const isDir = await ipc.readDir(p).then(() => true).catch(() => false);
+      if (isDir) { if (await openFolder(p)) did = true; }
+      else {
+        if (startup && !app.root) { const last = lastRoot(); if (last && await ipc.exists(last)) await openFolder(last); }
+        await editors.openFile(p, { preview: false });
+        did = true;
+      }
+    }
+    return did;
+  };
+  const opened = await openPaths(app.paths.args, true);
   if (!opened) {
     const last = lastRoot();
     if (last && await ipc.exists(last)) await openFolder(last);
     else await openFolder(null);
   }
+  void on<{ paths: string[] }>('open-paths', ({ paths }) => void openPaths(paths, false));
   shell.showView('explorer');
   if (!editors.groups.some((g) => g.tabs.length)) openWelcome(recentFolders(), () => void pickAndOpenFolder(), (p) => void openFolder(p));
   await scanPlugins();
+  void applyVscodeExts().then(() => applyAppearance());
 
   // ---- window close with unsaved changes
   const win = getCurrentWindow();

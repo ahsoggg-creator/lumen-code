@@ -29,6 +29,8 @@ const SPECIAL_LANG: Record<string, string> = {
 let extLang: Map<string, string> | null = null;
 let nameLang: Map<string, string> | null = null;
 
+export function resetLanguageCache(): void { extLang = null; nameLang = null; }
+
 export function languageFor(path: string): string {
   const mo = M();
   if (!extLang || !nameLang) {

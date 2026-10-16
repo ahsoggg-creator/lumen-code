@@ -99,6 +99,8 @@ export const SCHEMA: SettingDef[] = [
   { key: 'ai.terminalAgents', type: 'array', default: [], group: 'ИИ', label: 'Свои агенты для терминала', desc: 'Например [{"name":"Aider","command":"aider"}].' },
 
   { key: 'update.check', type: 'enum', default: 'startup', group: 'Обновления', label: 'Проверка обновлений', options: [{ value: 'startup', label: 'при запуске (раз в сутки)' }, { value: 'never', label: 'только вручную' }] },
+  { key: 'vscode.disabled', type: 'array', default: [], group: 'Плагины', label: 'Выключенные расширения VS Code' },
+  { key: 'vscode.overrideBuiltin', type: 'boolean', default: false, group: 'Плагины', label: 'Грамматики расширений VS Code заменяют встроенную подсветку', desc: 'По умолчанию применяются только для языков, которых нет в редакторе.' },
   { key: 'plugins.disabled', type: 'array', default: [], group: 'Плагины', label: 'Отключённые плагины' },
   { key: 'plugins.registry', type: 'string', default: 'https://raw.githubusercontent.com/ahsoggg-creator/lumen-code/main/registry/plugins.json', group: 'Плагины', label: 'Каталог плагинов (URL)' },
 

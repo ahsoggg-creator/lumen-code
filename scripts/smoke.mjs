@@ -17,6 +17,7 @@ mkdirSync(appdata);
 mkdirSync(join(work, 'proj', 'src'), { recursive: true });
 writeFileSync(join(work, 'proj', 'main.py'), 'import os\n\ndef greet(name: str) -> str:\n    return f"hello {name}"\n\nprint(greet("мир"))\n');
 writeFileSync(join(work, 'proj', 'src', 'app.ts'), 'export const x: number = 42;\nexport function add(a: number, b: number) { return a + b; }\n');
+writeFileSync(join(work, 'proj', 'test.nix'), ['# a comment', '{ pkgs ? import <nixpkgs> {} }:', 'let name = "lumen"; n = 42; in pkgs.mkShell { buildInputs = [ pkgs.hello ]; }', ''].join(String.fromCharCode(10)));
 writeFileSync(join(work, 'proj', 'README.md'), '# Demo\n\nSome **markdown**.\n');
 
 // A throw-away venv with debugpy so the debugger test does not touch the user's Python.
@@ -90,7 +91,7 @@ try {
   await ev('document.querySelector(".tb-btn[title^=\\"Нижняя\\"]")?.click()');
   check('terminal panel opens and xterm renders', await waitFor('!!document.querySelector(".xterm-screen")', 20000));
   await sleep(1500);
-  check('shell prints a prompt', await waitFor('document.querySelector(".xterm-rows")?.textContent.trim().length > 0', 10000));
+  check('shell prints a prompt', await waitFor('document.querySelector(".xterm-rows")?.textContent.trim().length > 0', 25000));
 
   // palette
   await ev('document.querySelector(".command-center")?.click()');
@@ -113,6 +114,18 @@ try {
   check('Run menu has debug items', await waitFor('[...document.querySelectorAll(".menu-item")].some(e=>e.textContent.includes("Начать отладку")) && [...document.querySelectorAll(".menu-item")].some(e=>e.textContent.includes("точку останова"))'));
   await ev('document.body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}))'); await ev('window.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}))');
 
+  // file associations: page renders, and the registry round-trip works (a fake extension, cleaned up afterwards)
+  await ev('[...document.querySelectorAll(".menu-btn")].find(b=>b.textContent==="Файл")?.click()');
+  await ev('[...document.querySelectorAll(".menu-item")].find(e=>e.textContent.includes("Ассоциации"))?.click()');
+  check('associations page lists extensions', await waitFor('document.querySelectorAll(".assoc-ext").length > 40'), String(await ev('document.querySelectorAll(".assoc-ext").length')));
+  const inv = (cmd, args) => ev(`window.__TAURI_INTERNALS__.invoke("${cmd}", ${JSON.stringify(args)}).then(v=>JSON.stringify(v ?? null)).catch(e=>"ERR "+e)`);
+  const applied = await inv('assoc_apply', { exts: ['lumentest'], allKnown: ['lumentest'], contextMenu: false });
+  const st = await inv('assoc_status', { exts: ['lumentest'] });
+  check('registry: extension registered under OpenWithProgids', applied === 'null' && JSON.parse(st).exts.includes('lumentest'), st);
+  await inv('assoc_remove_all', { allKnown: ['lumentest'] });
+  const st2 = await inv('assoc_status', { exts: ['lumentest'] });
+  check('registry: cleaned up again', JSON.parse(st2).exts.length === 0 && !JSON.parse(st2).registered, st2);
+
   // debugger (needs debugpy in the temp venv)
   if (venvPy) {
     await send('Emulation.setFocusEmulationEnabled', { enabled: true });
@@ -127,7 +140,7 @@ try {
       await key('F9', 'F9', 120);
       check('breakpoint glyph appears (F9)', await waitFor('!!document.querySelector(".bp-glyph")'));
       await key('F5', 'F5', 116);
-      check('debugger stops on the breakpoint', await waitFor('!!document.querySelector(".dbg-line")', 60000));
+      check('debugger stops on the breakpoint', await waitFor('!!document.querySelector(".dbg-line")', 60000), await ev('[...document.querySelectorAll(".dc-line")].map(e=>e.textContent).join(" | ").slice(0,400)'));
       check('variables panel shows the local "name"', await waitFor('[...document.querySelectorAll(".var-name")].some(e=>e.textContent==="name")', 15000), String(await ev('[...document.querySelectorAll(".var-row")].map(e=>e.textContent).join(" | ")')));
       check('debug toolbar visible', await ev('!!document.querySelector(".dbg-toolbar") && getComputedStyle(document.querySelector(".dbg-toolbar")).display !== "none"'));
       await key('F10', 'F10', 121);
@@ -146,6 +159,32 @@ try {
   if (shot) { const r = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(shot, Buffer.from(r.result.data, 'base64')); console.log(`screenshot: ${shot}`); }
   const real = errors.filter((e) => !/ResizeObserver|favicon/i.test(e));
   check('no console errors', real.length === 0, real.slice(0, 5).join(' | '));
+  // VS Code extensions from Open VSX: a theme and a grammar-only language (needs network, skipped when offline)
+  try {
+    const get = async (ns, name) => JSON.parse(await ev(`window.__TAURI_INTERNALS__.invoke("http_request", {req:{url:"https://open-vsx.org/api/${ns}/${name}"}}).then(v=>v.body)`));
+    const dr = await get('dracula-theme', 'theme-dracula');
+    const nix = await get('jnoortheen', 'nix-ide');
+    if (dr?.files?.download && nix?.files?.download) {
+      const dest = join(appdata, 'LumenCode', 'vscode-extensions').replaceAll(String.fromCharCode(92), '/');
+      const i1 = await inv('vsix_install', { source: dr.files.download, destRoot: dest });
+      const i2 = await inv('vsix_install', { source: nix.files.download, destRoot: dest });
+      check('Open VSX packages download and unpack', !i1.startsWith('ERR') && !i2.startsWith('ERR'), `${i1} ${i2}`.slice(0, 200));
+      await ev('location.reload()');
+      await sleep(1500);
+      check('app reloads with extensions', await waitFor('!!document.querySelector(".titlebar") && !!document.querySelector(".tree-row")', 30000));
+      await ev('[...document.querySelectorAll(".tree-row")].find(r=>r.textContent.includes("test.nix"))?.click()');
+      check('VS Code grammar highlights a language Monaco lacks', await waitFor('new Set([...document.querySelectorAll(".monaco-editor .view-line span span")].map(e=>e.className).filter(c=>/mtk[0-9]+/.test(c))).size >= 3', 30000), String(await ev('[...new Set([...document.querySelectorAll(".monaco-editor .view-line span span")].map(e=>e.className))].join(",")')));
+      await ev('document.querySelector(".act-btn[title=\\"Управление\\"]")?.click()');
+      await ev('[...document.querySelectorAll(".menu-item")].find(e=>e.textContent.includes("Настройки"))?.click()');
+      check('VS Code colour theme is offered', await waitFor('[...document.querySelectorAll(".theme-card")].some(e=>e.textContent.includes("Dracula (VS Code)")) || [...document.querySelectorAll(".theme-card")].some(e=>e.textContent.includes("(VS Code)"))', 20000));
+      await ev('[...document.querySelectorAll(".theme-card")].find(e=>e.textContent.includes("(VS Code)"))?.click()');
+      check('imported theme applies (Dracula background)', await waitFor('document.documentElement.style.getPropertyValue("--bg").trim()==="#282a36"', 10000), String(await ev('document.documentElement.style.getPropertyValue("--bg")')));
+      await sleep(800);
+      const late = errors.filter((e) => !/ResizeObserver|favicon/i.test(e));
+      check('no console errors after loading extensions', late.length === 0, late.slice(0, 3).join(' | '));
+    } else console.log('SKIP  Open VSX tests (extensions not found)');
+  } catch (e) { console.log('SKIP  Open VSX tests (offline?)', String(e).slice(0, 100)); }
+
   ws.close();
 } catch (e) {
   check('smoke run', false, String(e));

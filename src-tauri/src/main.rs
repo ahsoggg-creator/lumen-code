@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod assoc;
 mod dap;
 mod fsx;
 mod git;
@@ -9,6 +10,7 @@ mod search;
 mod tasks;
 mod term;
 mod update;
+mod vsix;
 mod util;
 mod watch;
 
@@ -26,7 +28,21 @@ fn app_ready(window: tauri::WebviewWindow) {
 
 fn main() {
     update::cleanup_old();
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // A second launch (e.g. "Open with Lumen Code") hands its arguments to the running window.
+    // Skipped under LUMEN_HEADLESS so tests can run next to a normal instance.
+    if std::env::var_os("LUMEN_HEADLESS").is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            let paths: Vec<String> = argv.into_iter().skip(1).filter(|a| !a.starts_with("--")).collect();
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+            let _ = tauri::Emitter::emit(app, "open-paths", serde_json::json!({ "paths": paths }));
+        }));
+    }
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -62,6 +78,11 @@ fn main() {
             fsx::open_external,
             fsx::open_path,
             fsx::refresh_env,
+            vsix::vsix_install,
+            assoc::assoc_status,
+            assoc::assoc_apply,
+            assoc::assoc_remove_all,
+            assoc::open_default_apps,
             dap::dap_connect,
             dap::dap_spawn,
             dap::dap_send,

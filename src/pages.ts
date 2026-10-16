@@ -192,6 +192,7 @@ export function openWelcome(recent: string[], openFolder: () => void, openRecent
             link('palette', 'Выбрать тему', () => void commands.execute('workbench.pickTheme'), 'ctrl+k ctrl+t'),
             link('sliders', 'Все настройки', () => openSettingsPage(), 'ctrl+,'),
             link('keyboard', 'Сочетания клавиш', () => openKeybindingsPage(), 'ctrl+k ctrl+s'),
+            link('link', 'Открывать .py и другие файлы в Lumen Code', () => void commands.execute('file.associations')),
             link('wrench', 'Свой CSS-файл оформления', () => void commands.execute('workbench.openCustomCss')),
             h('h3.mt', null, 'Возможности'),
             link('python', 'Python: интерпретатор и пакеты', () => shell.showView('python')),

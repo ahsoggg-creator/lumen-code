@@ -231,3 +231,8 @@ button.chip:hover { background: var(--bg-hover); color: var(--fg); border-color:
 .dbg-input-row { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-top: 1px solid var(--border-soft); background: var(--bg-side); } .dbg-input { flex: 1; background: transparent; border: 0; outline: none; color: var(--fg); font: 12.5px var(--mono); }
 .outline-bar { padding: 8px 10px; } .out-row { display: flex; align-items: center; gap: 8px; height: 24px; padding-right: 10px; color: var(--fg-dim); } .out-row:hover { background: var(--bg-hover); color: var(--fg); } .out-row.class { color: var(--yellow); } .out-row.fn { color: var(--blue); } .out-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .todo-list { padding-bottom: 20px; }
+
+.assoc-group h3 { margin: 18px 0 6px; font-size: 13px; color: var(--fg-dim); } .assoc-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.assoc-ext { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--border-soft); border-radius: 20px; font-family: var(--mono); font-size: 12px; transition: all .12s; } .assoc-ext:hover { border-color: var(--border); background: var(--bg-hover); } .assoc-ext.on { background: var(--accent-soft); border-color: transparent; color: var(--accent); } .assoc-ext input { accent-color: var(--accent); }
+
+.vsx-view { padding-bottom: 24px; } .vsx-note { padding: 8px 14px; } .vsx-search { display: flex; gap: 6px; padding: 4px 12px 6px; }
