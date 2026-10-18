@@ -30,6 +30,7 @@ export const ipc = {
   remove: (path: string, permanent = false) => invoke<void>('delete_path', { path, permanent }),
   copy: (from: string, to: string) => invoke<void>('copy_path', { from, to }),
   exists: (path: string) => invoke<boolean>('path_exists', { path }),
+  realPath: (path: string) => invoke<string>('real_path', { path }),
   reveal: (path: string) => invoke<void>('reveal_in_explorer', { path }),
   vsixInstall: (source: string, destRoot: string) => invoke<{ dir: string; id: string; version: string }>('vsix_install', { source, destRoot }),
   assocStatus: (exts: string[]) => invoke<{ exts: string[]; context_menu: boolean; registered: boolean }>('assoc_status', { exts }),

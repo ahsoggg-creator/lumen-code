@@ -89,7 +89,22 @@ export function relative(root: string | null, p: string): string {
   const r = key(root) + '\\';
   return key(p).startsWith(r) ? norm(p).slice(r.length) : p;
 }
-export const isUnder = (root: string, p: string): boolean => key(p).startsWith(key(root) + '\\') || key(p) === key(root);
+/** Like `norm`, but also resolves `.` and `..` (a `..` can never climb above the drive or UNC share). */
+export function normalizePath(p: string): string {
+  const n = norm(p);
+  const root = /^(?:\\\\[^\\]+\\[^\\]+|[a-z]:)(?=\\|$)/i.exec(n)?.[0] ?? '';
+  const out: string[] = [];
+  for (const seg of n.slice(root.length).split('\\')) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') out.pop(); else out.push(seg);
+  }
+  return root ? root + (out.length ? '\\' + out.join('\\') : '') : out.join('\\');
+}
+export const isUnder = (root: string, p: string): boolean => {
+  const r = normalizePath(root).toLowerCase();
+  const t = normalizePath(p).toLowerCase();
+  return t === r || t.startsWith(r.endsWith('\\') ? r : r + '\\');
+};
 export function toFileUri(p: string): string {
   return 'file:///' + norm(p).replace(/\\/g, '/').replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/').replace('%3A', ':');
 }

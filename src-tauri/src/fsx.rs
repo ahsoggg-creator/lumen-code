@@ -246,6 +246,53 @@ pub fn path_exists(path: String) -> bool {
     Path::new(&path).exists()
 }
 
+/// Canonical form of `p` (symlinks, junctions and `..` resolved) without the `\\?\` prefix. A path that does not exist yet
+/// (a file about to be created) is resolved through its nearest existing parent.
+pub fn real_path_of(p: &Path) -> std::io::Result<PathBuf> {
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    let mut cur = p.to_path_buf();
+    let base = loop {
+        match fs::canonicalize(&cur) {
+            Ok(b) => break b,
+            Err(e) => {
+                let (Some(name), Some(parent)) = (cur.file_name().map(|n| n.to_owned()), cur.parent().map(Path::to_path_buf)) else { return Err(e) };
+                if name == ".." {
+                    return Err(e);
+                }
+                tail.push(name);
+                cur = parent;
+            }
+        }
+    };
+    let mut out = base.to_string_lossy().into_owned();
+    if let Some(rest) = out.strip_prefix(r"\\?\UNC\") {
+        out = format!(r"\\{rest}");
+    } else if let Some(rest) = out.strip_prefix(r"\\?\") {
+        out = rest.to_owned();
+    }
+    let mut out = PathBuf::from(out);
+    for part in tail.iter().rev() {
+        out.push(part);
+    }
+    Ok(out)
+}
+
+#[tauri::command(async)]
+pub fn real_path(path: String) -> Result<String, String> {
+    // `..` in the non-existing tail would escape the check, so resolve it lexically first.
+    let mut lexical = PathBuf::new();
+    for c in Path::new(&path).components() {
+        match c {
+            std::path::Component::ParentDir => {
+                lexical.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => lexical.push(other.as_os_str()),
+        }
+    }
+    real_path_of(&lexical).map(|p| s(&p)).map_err(|e| format!("{path}: {e}"))
+}
+
 #[tauri::command(async)]
 pub fn reveal_in_explorer(path: String) {
     let p = PathBuf::from(&path);
@@ -282,6 +329,19 @@ mod tests {
         let bytes = encode("Это текст в кодировке windows-1251, достаточно длинный для детектора.", "windows1251");
         let (text, enc) = decode(&bytes, None);
         assert!(text.contains("Это текст"), "{enc}");
+    }
+
+    #[test]
+    fn real_path_resolves_parent_dirs_and_missing_tail() {
+        let base = std::env::temp_dir().join(format!("lumen-realpath-{}", std::process::id()));
+        fs::create_dir_all(base.join("a")).unwrap();
+        let canon_base = real_path_of(&base).unwrap();
+        let up = real_path(format!("{}\\a\\..\\..\\{}\\x.txt", base.display(), base.file_name().unwrap().to_string_lossy())).unwrap();
+        assert_eq!(up, s(&canon_base.join("x.txt")));
+        let outside = real_path(format!("{}\\a\\..\\..\\outside.txt", base.display())).unwrap();
+        assert!(!outside.to_lowercase().starts_with(&s(&canon_base).to_lowercase()), "{outside}");
+        assert!(!outside.starts_with(r"\\?\"));
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]

@@ -74,6 +74,7 @@ fn main() {
             fsx::delete_path,
             fsx::copy_path,
             fsx::path_exists,
+            fsx::real_path,
             fsx::reveal_in_explorer,
             fsx::open_external,
             fsx::open_path,

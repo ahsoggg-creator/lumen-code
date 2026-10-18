@@ -2,7 +2,7 @@ import { app, monaco } from '../app';
 import { docs } from '../editor';
 import { errText, ipc } from '../ipc';
 import { cfg } from '../settings';
-import { dirname, isUnder, join, norm, relative, key } from '../util';
+import { dirname, isUnder, join, normalizePath, relative, key } from '../util';
 import type { ToolDef } from './core';
 
 export const TOOLS: ToolDef[] = [
@@ -25,11 +25,15 @@ export function needsApproval(name: string): boolean {
   return !cfg('ai.autoApproveCommands');
 }
 
-function resolve(p: string): string {
+async function resolve(p: string): Promise<string> {
   if (!app.root) throw new Error('Папка проекта не открыта');
-  const abs = /^[a-z]:[\\/]/i.test(p) ? norm(p) : join(app.root, p === '.' ? '' : p);
-  if (!isUnder(app.root, abs)) throw new Error('Путь вне рабочей папки запрещён');
-  return norm(abs);
+  const abs = normalizePath(/^[a-z]:[\/]/i.test(p) ? p : join(app.root, p === '.' ? '' : p));
+  const outside = () => new Error('Путь вне рабочей папки запрещён');
+  if (!isUnder(app.root, abs)) throw outside();
+  // The lexical check does not see symlinks and junctions: compare the real locations too.
+  const [root, real] = await Promise.all([ipc.realPath(app.root), ipc.realPath(abs)]);
+  if (!isUnder(root, real)) throw outside();
+  return abs;
 }
 
 const clip = (s: string, n = 12000): string => (s.length > n ? `${s.slice(0, n)}\n… [обрезано, всего ${s.length} симв.]` : s);
@@ -41,7 +45,7 @@ export async function previewTool(name: string, a: Record<string, unknown>): Pro
   const path = String(a.path ?? '');
   if (name === 'write_file') {
     const content = String(a.content ?? '');
-    const exists = await ipc.exists(resolve(path)).catch(() => false);
+    const exists = await ipc.exists(await resolve(path)).catch(() => false);
     return { title: `${exists ? 'Перезаписать' : 'Создать'} ${path}`, lines: content.split('\n').slice(0, 40).map((t) => ({ kind: '+' as const, text: t })), note: `${content.split('\n').length} строк` };
   }
   const old = String(a.old_text ?? '').split('\n');
@@ -53,7 +57,7 @@ export async function runTool(name: string, a: Record<string, unknown>): Promise
   try {
     switch (name) {
       case 'read_file': {
-        const p = resolve(String(a.path));
+        const p = await resolve(String(a.path));
         const open = docs.find(p);
         const text = open ? open.model.getValue() : (await ipc.readFile(p)).content;
         const lines = text.split('\n');
@@ -62,7 +66,7 @@ export async function runTool(name: string, a: Record<string, unknown>): Promise
         return clip(lines.slice(s - 1, e).map((l, i) => `${s + i}\t${l}`).join('\n'));
       }
       case 'list_dir': {
-        const p = resolve(String(a.path || '.'));
+        const p = await resolve(String(a.path || '.'));
         return (await ipc.readDir(p)).filter((e) => e.name !== '.git' && e.name !== 'node_modules').map((e) => (e.is_dir ? `${e.name}/` : e.name)).join('\n') || '(пусто)';
       }
       case 'search_text': {
@@ -73,12 +77,12 @@ export async function runTool(name: string, a: Record<string, unknown>): Promise
       }
       case 'get_diagnostics': {
         const mo = monaco();
-        const only = a.path ? key(resolve(String(a.path))) : null;
+        const only = a.path ? key(await resolve(String(a.path))) : null;
         const ms = mo.editor.getModelMarkers({}).filter((m) => m.resource.scheme === 'file' && (!only || key(m.resource.fsPath) === only));
         return ms.slice(0, 80).map((m) => `${relative(app.root, m.resource.fsPath)}:${m.startLineNumber}:${m.startColumn} [${m.severity >= 8 ? 'error' : 'warning'}] ${m.message}`).join('\n') || 'Проблем нет';
       }
       case 'edit_file': {
-        const p = resolve(String(a.path));
+        const p = await resolve(String(a.path));
         const oldT = String(a.old_text);
         const newT = String(a.new_text);
         const open = docs.find(p);
@@ -106,7 +110,7 @@ export async function runTool(name: string, a: Record<string, unknown>): Promise
         return `OK: изменён ${relative(app.root, p)}`;
       }
       case 'write_file': {
-        const p = resolve(String(a.path));
+        const p = await resolve(String(a.path));
         const open = docs.find(p);
         const content = String(a.content);
         if (open) { open.model.pushEditOperations([], [{ range: open.model.getFullModelRange(), text: content }], () => null); await docs.save(open); }
@@ -114,7 +118,7 @@ export async function runTool(name: string, a: Record<string, unknown>): Promise
         return `OK: записан ${relative(app.root, p)} (${content.length} симв.)`;
       }
       case 'run_command': {
-        const cwd = a.cwd ? resolve(String(a.cwd)) : app.root ?? undefined;
+        const cwd = a.cwd ? await resolve(String(a.cwd)) : app.root ?? undefined;
         const r = await ipc.exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', String(a.command)], cwd, 120000);
         return clip(`exit code: ${r.code}\n${r.stdout}${r.stderr ? `\n[stderr]\n${r.stderr}` : ''}`, 10000);
       }
