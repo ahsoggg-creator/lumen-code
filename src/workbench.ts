@@ -109,8 +109,8 @@ export function registerWorkbench(): void {
   }, { cat: 'Настройки' });
   C('workbench.openConfigFolder', 'Открыть папку конфигурации', () => ipc.reveal(app.paths.config), { cat: 'Настройки' });
   C('help.welcome', 'Справка: страница приветствия', () => openWelcome(recentFolders(), () => void pickAndOpenFolder(), (p) => void openFolder(p)), { cat: 'Справка' });
-  C('help.docs', 'Справка: документация на GitHub', () => ipc.openUrl('https://github.com/ahsoggg-creator/lumen-code#readme'), { cat: 'Справка' });
-  C('help.issue', 'Справка: сообщить о проблеме', () => ipc.openUrl('https://github.com/ahsoggg-creator/lumen-code/issues/new'), { cat: 'Справка' });
+  C('help.docs', 'Справка: документация на GitHub', () => ipc.openUrl('https://github.com/ahsoggg/lumen-code#readme'), { cat: 'Справка' });
+  C('help.issue', 'Справка: сообщить о проблеме', () => ipc.openUrl('https://github.com/ahsoggg/lumen-code/issues/new'), { cat: 'Справка' });
   C('help.about', 'Справка: о программе', () => {
     const jsMem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
     notify(`Lumen Code ${app.version}\nTauri + Monaco · ${jsMem ? `память JS: ${fmtSize(jsMem.usedJSHeapSize)}` : ''}`, { timeout: 7000 });

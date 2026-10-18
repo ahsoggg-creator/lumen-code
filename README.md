@@ -22,7 +22,7 @@
 
 ## Установка
 
-Скачайте `LumenCode.exe` из [Releases](https://github.com/ahsoggg-creator/lumen-code/releases) и запустите. Нужен WebView2 (есть в Windows 11 и новых Windows 10). Для Git и Python — установленные `git` и Python.
+Скачайте `LumenCode.exe` из [Releases](https://github.com/ahsoggg/lumen-code/releases) и запустите. Нужен WebView2 (есть в Windows 11 и новых Windows 10). Для Git и Python — установленные `git` и Python.
 
 ## Сборка
 

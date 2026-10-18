@@ -305,7 +305,7 @@ export async function createPlugin(): Promise<void> {
   const dir = join(app.paths.plugins, id);
   if (await ipc.exists(dir)) { notify('Такой плагин уже есть', { kind: 'warn' }); return; }
   const manifest = { id, name: id, version: '0.1.0', description: 'Мой плагин', author: '', main: 'main.js', permissions: [] };
-  const main = `// Плагин Lumen Code. Документация: https://github.com/ahsoggg-creator/lumen-code/blob/main/docs/PLUGINS.md
+  const main = `// Плагин Lumen Code. Документация: https://github.com/ahsoggg/lumen-code/blob/main/docs/PLUGINS.md
 export function activate(lumen) {
   lumen.commands.register('hello', 'Сказать привет', () => {
     const ed = lumen.editor.active();

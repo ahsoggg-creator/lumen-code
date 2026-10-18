@@ -4,7 +4,7 @@
     "name": "Hello World",
     "description": "Минимальный пример: команда, горячая клавиша, пункт в строке состояния.",
     "author": "Lumen Code",
-    "repo": "ahsoggg-creator/lumen-code",
+    "repo": "ahsoggg/lumen-code",
     "path": "examples/plugins/hello-world"
   },
   {
@@ -12,7 +12,7 @@
     "name": "Pomodoro",
     "description": "Таймер помодоро в строке состояния.",
     "author": "Lumen Code",
-    "repo": "ahsoggg-creator/lumen-code",
+    "repo": "ahsoggg/lumen-code",
     "path": "examples/plugins/pomodoro"
   },
   {
@@ -20,7 +20,7 @@
     "name": "Lorem Ipsum",
     "description": "Заглушечный текст: абзацы, предложения, слова.",
     "author": "Lumen Code",
-    "repo": "ahsoggg-creator/lumen-code",
+    "repo": "ahsoggg/lumen-code",
     "path": "examples/plugins/lorem-ipsum"
   },
   {
@@ -28,7 +28,7 @@
     "name": "Быстрые заметки",
     "description": "Боковая панель-блокнот с автосохранением.",
     "author": "Lumen Code",
-    "repo": "ahsoggg-creator/lumen-code",
+    "repo": "ahsoggg/lumen-code",
     "path": "examples/plugins/quick-notes"
   },
   {
@@ -36,7 +36,7 @@
     "name": "Эмодзи",
     "description": "Вставка эмодзи с поиском (Ctrl+Alt+E).",
     "author": "Lumen Code",
-    "repo": "ahsoggg-creator/lumen-code",
+    "repo": "ahsoggg/lumen-code",
     "path": "examples/plugins/emoji-picker"
   }
 ]

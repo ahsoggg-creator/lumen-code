@@ -13,9 +13,11 @@ use std::io::{Read, Write};
 use std::path::Path;
 use tauri::{AppHandle, Emitter};
 
-pub const REPO: &str = "ahsoggg-creator/lumen-code";
+pub const REPO: &str = "ahsoggg/lumen-code";
 const ASSET: &str = "LumenCode.exe";
-const DOWNLOAD_PREFIX: &str = "https://github.com/ahsoggg-creator/lumen-code/";
+fn download_prefix() -> String {
+    format!("https://github.com/{REPO}/")
+}
 const MAX_DOWNLOAD: u64 = 300 << 20;
 
 type Version = (u32, u32, u32);
@@ -48,7 +50,7 @@ pub fn parse_release(json: &str) -> Result<(Version, Release), String> {
     let exe_url = url(ASSET).ok_or_else(|| format!("release has no {ASSET}"))?;
     let sums_url = url("SHA256SUMS.txt").ok_or("release has no SHA256SUMS.txt")?;
     for u in [&exe_url, &sums_url] {
-        if !u.starts_with(DOWNLOAD_PREFIX) {
+        if !u.starts_with(&download_prefix()) {
             return Err(format!("refusing to download from an unexpected address: {u}"));
         }
     }
@@ -111,7 +113,8 @@ pub fn update_check() -> Result<Option<Release>, String> {
 /// Downloads, verifies, swaps the executable, starts the new one and exits.
 #[tauri::command(async)]
 pub fn update_install(app: AppHandle, release: Release) -> Result<(), String> {
-    if !release.exe_url.starts_with(DOWNLOAD_PREFIX) || !release.sums_url.starts_with(DOWNLOAD_PREFIX) {
+    let prefix = download_prefix();
+    if !release.exe_url.starts_with(&prefix) || !release.sums_url.starts_with(&prefix) {
         return Err("unexpected download address".into());
     }
     let cur = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -188,12 +191,12 @@ mod tests {
     #[test]
     fn release_json() {
         let j = r#"{"tag_name":"v0.2.0","body":"notes","html_url":"https://github.com/x","assets":[
-          {"name":"LumenCode.exe","size":10,"browser_download_url":"https://github.com/ahsoggg-creator/lumen-code/releases/download/v0.2.0/LumenCode.exe"},
-          {"name":"SHA256SUMS.txt","browser_download_url":"https://github.com/ahsoggg-creator/lumen-code/releases/download/v0.2.0/SHA256SUMS.txt"}]}"#;
+          {"name":"LumenCode.exe","size":10,"browser_download_url":"https://github.com/ahsoggg/lumen-code/releases/download/v0.2.0/LumenCode.exe"},
+          {"name":"SHA256SUMS.txt","browser_download_url":"https://github.com/ahsoggg/lumen-code/releases/download/v0.2.0/SHA256SUMS.txt"}]}"#;
         let (v, r) = parse_release(j).unwrap();
         assert_eq!(v, (0, 2, 0));
         assert_eq!(r.size, 10);
-        let evil = j.replace("github.com/ahsoggg-creator/lumen-code", "evil.example/x");
+        let evil = j.replace("github.com/ahsoggg/lumen-code", "evil.example/x");
         assert!(parse_release(&evil).is_err());
     }
 

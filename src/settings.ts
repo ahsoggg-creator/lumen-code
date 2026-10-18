@@ -102,7 +102,7 @@ export const SCHEMA: SettingDef[] = [
   { key: 'vscode.disabled', type: 'array', default: [], group: 'Плагины', label: 'Выключенные расширения VS Code' },
   { key: 'vscode.overrideBuiltin', type: 'boolean', default: false, group: 'Плагины', label: 'Грамматики расширений VS Code заменяют встроенную подсветку', desc: 'По умолчанию применяются только для языков, которых нет в редакторе.' },
   { key: 'plugins.disabled', type: 'array', default: [], group: 'Плагины', label: 'Отключённые плагины' },
-  { key: 'plugins.registry', type: 'string', default: 'https://raw.githubusercontent.com/ahsoggg-creator/lumen-code/main/registry/plugins.json', group: 'Плагины', label: 'Каталог плагинов (URL)' },
+  { key: 'plugins.registry', type: 'string', default: 'https://raw.githubusercontent.com/ahsoggg/lumen-code/main/registry/plugins.json', group: 'Плагины', label: 'Каталог плагинов (URL)' },
 
   { key: 'debug.justMyCode', type: 'boolean', default: true, group: 'Отладка', label: 'Python: отлаживать только свой код', desc: 'Не заходить внутрь библиотек.' },
   { key: 'debug.exceptions', type: 'enum', default: 'uncaught', group: 'Отладка', label: 'Останавливаться на исключениях', options: [{ value: 'none', label: 'никогда' }, { value: 'uncaught', label: 'только необработанные' }, { value: 'raised', label: 'на всех' }] },

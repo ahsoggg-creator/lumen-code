@@ -41,7 +41,7 @@ async function offer(rel: Release): Promise<void> {
   notes.innerHTML = rel.notes ? renderMarkdown(rel.notes) : '<p class="dim">Описание не указано.</p>';
   const body = h('div', null, h('div', null, `Текущая версия: ${app.version} → новая: `, h('b', null, rel.version), rel.size ? h('span.dim', null, ` (${fmtSize(rel.size)})`) : null), notes);
   const r = await dialog('Доступно обновление', body, [{ label: 'Позже' }, { label: 'Страница релиза' }, { label: 'Скачать и установить', primary: true }]);
-  if (r === 1) void ipc.openUrl(rel.page || `https://github.com/ahsoggg-creator/lumen-code/releases/tag/${rel.tag}`);
+  if (r === 1) void ipc.openUrl(rel.page || `https://github.com/ahsoggg/lumen-code/releases/tag/${rel.tag}`);
   else if (r === 2) await install(rel);
 }
 
