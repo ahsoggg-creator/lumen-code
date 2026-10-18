@@ -27,7 +27,7 @@ export function needsApproval(name: string): boolean {
 
 async function resolve(p: string): Promise<string> {
   if (!app.root) throw new Error('Папка проекта не открыта');
-  const abs = normalizePath(/^[a-z]:[\/]/i.test(p) ? p : join(app.root, p === '.' ? '' : p));
+  const abs = normalizePath(/^[a-z]:[\\/]/i.test(p) ? p : join(app.root, p === '.' ? '' : p));
   const outside = () => new Error('Путь вне рабочей папки запрещён');
   if (!isUnder(app.root, abs)) throw outside();
   // The lexical check does not see symlinks and junctions: compare the real locations too.
