@@ -36,6 +36,45 @@ async function resolve(p: string): Promise<string> {
   return abs;
 }
 
+/** Original contents of the files an agent request touched (null = the file did not exist), so the request can be undone. */
+export class Checkpoint {
+  private files = new Map<string, string | null>();
+  get size(): number { return this.files.size; }
+
+  async capture(path: string): Promise<void> {
+    if (this.files.has(path)) return;
+    const open = docs.find(path);
+    if (open) { this.files.set(path, open.model.getValue()); return; }
+    this.files.set(path, (await ipc.exists(path)) ? (await ipc.readFile(path)).content : null);
+  }
+
+  /** Puts every captured file back; returns the number restored. */
+  async restore(): Promise<number> {
+    let n = 0;
+    for (const [path, text] of this.files) {
+      const open = docs.find(path);
+      try {
+        if (text === null) {
+          if (open) docs.dispose(open);
+          if (await ipc.exists(path)) await ipc.remove(path);
+        } else if (open) {
+          open.model.pushEditOperations([], [{ range: open.model.getFullModelRange(), text }], () => null);
+          await docs.save(open);
+        } else {
+          await ipc.writeFile(path, text);
+        }
+        n++;
+      } catch { /* leave the file as it is and go on with the others */ }
+    }
+    this.files.clear();
+    return n;
+  }
+}
+
+let checkpoint: Checkpoint | null = null;
+/** Files changed by the agent from now on are recorded in `cp` (null stops recording). */
+export const recordTo = (cp: Checkpoint | null): void => { checkpoint = cp; };
+
 const clip = (s: string, n = 12000): string => (s.length > n ? `${s.slice(0, n)}\n… [обрезано, всего ${s.length} симв.]` : s);
 
 export interface Preview { title: string; lines: { kind: '+' | '-' | ' '; text: string }[]; note?: string }
@@ -83,6 +122,7 @@ export async function runTool(name: string, a: Record<string, unknown>): Promise
       }
       case 'edit_file': {
         const p = await resolve(String(a.path));
+        await checkpoint?.capture(p);
         const oldT = String(a.old_text);
         const newT = String(a.new_text);
         const open = docs.find(p);
@@ -111,6 +151,7 @@ export async function runTool(name: string, a: Record<string, unknown>): Promise
       }
       case 'write_file': {
         const p = await resolve(String(a.path));
+        await checkpoint?.capture(p);
         const open = docs.find(p);
         const content = String(a.content);
         if (open) { open.model.pushEditOperations([], [{ range: open.model.getFullModelRange(), text: content }], () => null); await docs.save(open); }

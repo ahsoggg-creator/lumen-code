@@ -10,7 +10,7 @@ import { shell } from '../shell';
 import { confirmDialog, notify } from '../ui';
 import { h, uid } from '../util';
 import { PRESETS, AbortHandle, activeProvider, agentsChanged, apiKey, keyName, listModels, pluginAgents, providers, saveProviders, streamChat, type Msg, type Provider } from './core';
-import { TOOLS, dangerOf, needsApproval, previewTool, runTool } from './tools';
+import { Checkpoint, TOOLS, dangerOf, recordTo, needsApproval, previewTool, runTool } from './tools';
 
 const TERMINAL_AGENTS = [
   { name: 'Claude Code', command: 'claude', probe: 'claude' },
@@ -179,6 +179,18 @@ export function registerAI(): void {
         };
       }
 
+      function undoBar(cp: Checkpoint): void {
+        const n = cp.size;
+        const btn = h('button.btn', { onclick: async () => {
+          if (!(await confirmDialog('Откатить изменения', `Вернуть ${n} файл(ов) к состоянию до этого запроса?`, 'Откатить', true))) return;
+          const done = await cp.restore();
+          bar2.replaceChildren(h('span.dim.small', null, `Откат выполнен: ${done} из ${n}`));
+        } }, `Откатить изменения этого запроса (файлов: ${n})`);
+        const bar2 = h('div.msg.tool.undo', null, btn);
+        list.append(bar2);
+        scrollEnd();
+      }
+
       function setBusy(b: boolean): void {
         busy = b;
         sendBtn.innerHTML = icon(b ? 'stop' : 'send', 16);
@@ -213,7 +225,9 @@ export function registerAI(): void {
             bubble.done();
           } else {
             history.push({ role: 'user', text: full });
-            await agentLoop(p!);
+            const cp = new Checkpoint();
+            recordTo(cp);
+            try { await agentLoop(p!); } finally { recordTo(null); if (cp.size) undoBar(cp); }
           }
         } catch (e) {
           list.append(h('div.msg.error', null, errText(e)));
