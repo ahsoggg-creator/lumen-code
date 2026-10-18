@@ -2,7 +2,7 @@ import type * as Mn from 'monaco-editor';
 import { app, monaco as M } from './app';
 import { commands } from './commands';
 import { icon, fileIconInfo } from './icons';
-import { langForPath } from './toolchains';
+import { LANGS, langForPath } from './toolchains';
 import { ipc, errText } from './ipc';
 import { settings, cfg } from './settings';
 import { dialog, notify, showMenu } from './ui';
@@ -20,6 +20,8 @@ export interface Doc {
   dirty: boolean;
   /** Last disk mtime for which the "changed on disk" notice was shown. */
   warnedMtime: number;
+  /** Extension (without a dot) an untitled document gets when saved for the first time. */
+  ext?: string;
 }
 
 const SPECIAL_LANG: Record<string, string> = {
@@ -93,13 +95,13 @@ class Documents {
     return doc;
   }
 
-  createUntitled(text = '', language = 'plaintext'): Doc {
+  createUntitled(text = '', language = 'plaintext', ext?: string): Doc {
     const mo = M();
     const name = `Untitled-${++this.untitled}`;
     const model = mo.editor.createModel(text, language, mo.Uri.parse(`untitled:${name}`));
     const eol = cfg<string>('files.eol');
     if (eol === '\n' || eol === '\r\n') model.setEOL(eol === '\n' ? mo.editor.EndOfLineSequence.LF : mo.editor.EndOfLineSequence.CRLF);
-    const doc: Doc = { id: uid('doc'), path: null, name, model, encoding: 'utf8', mtime: 0, savedVersion: model.getAlternativeVersionId(), dirty: text.length > 0, warnedMtime: 0 };
+    const doc: Doc = { id: uid('doc'), path: null, name, model, encoding: 'utf8', mtime: 0, savedVersion: model.getAlternativeVersionId(), dirty: text.length > 0, warnedMtime: 0, ext };
     this.map.set(`untitled:${name}`, doc);
     this.track(doc);
     this.onOpen.fire(doc);
@@ -122,7 +124,7 @@ class Documents {
   async save(doc: Doc, saveAsPath?: string): Promise<boolean> {
     let path = saveAsPath ?? doc.path;
     if (!path) {
-      const picked = await pickSavePath(doc.name);
+      const picked = await pickSavePath(doc);
       if (!picked) return false;
       path = picked;
     }
@@ -187,10 +189,16 @@ class Documents {
 
 export const docs = new Documents();
 
-async function pickSavePath(suggest: string): Promise<string | null> {
+const langNameForExt = (ext: string): string => (ext === 'txt' ? 'Текст' : LANGS.find((l) => l.exts.includes(ext))?.name ?? ext.toUpperCase());
+
+async function pickSavePath(doc: Doc): Promise<string | null> {
   const { save } = await import('@tauri-apps/plugin-dialog');
-  const r = await save({ defaultPath: app.root ? `${app.root}\\${suggest}` : suggest });
-  return r ?? null;
+  const ext = doc.ext;
+  const suggest = ext ? `${doc.name}.${ext}` : doc.name;
+  const filters = ext ? [{ name: `${langNameForExt(ext)} (*.${ext})`, extensions: [ext] }, { name: 'Все файлы', extensions: ['*'] }] : undefined;
+  const r = await save({ defaultPath: app.root ? `${app.root}\\${suggest}` : suggest, filters });
+  if (!r) return null;
+  return ext && !extname(r) ? `${r}.${ext}` : r;
 }
 
 // ================================================================= tabs and groups
@@ -636,8 +644,8 @@ class EditorArea {
     this.addTab(this.activeGroup, { id: uid('tab'), kind: 'diff', diff: spec, preview: true });
   }
 
-  newUntitled(text = '', language = 'plaintext'): Doc {
-    const doc = docs.createUntitled(text, language);
+  newUntitled(text = '', language = 'plaintext', ext?: string): Doc {
+    const doc = docs.createUntitled(text, language, ext);
     this.addTab(this.activeGroup, { id: uid('tab'), kind: 'doc', doc, preview: false });
     return doc;
   }

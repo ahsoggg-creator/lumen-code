@@ -52,13 +52,14 @@ export async function newFileChooser(dir?: string): Promise<void> {
   if (pick.value === 'more') { await newFromTemplate(dir); return; }
   const base = await targetDir(dir);
   if (pick.value === 'text') {
+    if (!dir) { editors.newUntitled('', 'plaintext', 'txt'); return; }
     const name = await inputBox({ title: 'Имя текстового документа', value: 'Новый текстовый документ.txt', validate: (v) => (/^[^\\/:*?"<>|]+$/.test(v.trim()) ? null : 'Недопустимое имя') });
     if (!name) return;
     const file = name.trim();
     await createFile(base, extname(file) ? file : `${file}.txt`, '');
     return;
   }
-  await createFromLang(LANGS.find((l) => l.id === pick.value.slice(5))!, base);
+  await createFromLang(LANGS.find((l) => l.id === pick.value.slice(5))!, base, dir);
 }
 
 export async function newFromTemplate(dir?: string): Promise<void> {
@@ -97,16 +98,18 @@ export async function newFromTemplate(dir?: string): Promise<void> {
     return;
   }
   const lang = LANGS.find((l) => l.id === pick.value.slice(5))!;
-  await createFromLang(lang, base);
+  await createFromLang(lang, base, dir);
 }
 
-async function createFromLang(lang: LangDef, base: string | null): Promise<void> {
+/** Without `dir` (Ctrl+N) an unnamed tab opens; the name and extension are chosen on the first save. */
+async function createFromLang(lang: LangDef, base: string | null, dir?: string): Promise<void> {
   if (!(await confirmMissing(lang))) return;
+  if (!dir) { editors.newUntitled('', languageFor(`x.${lang.exts[0]}`), lang.exts[0]); return; }
   const name = await inputBox({ title: `Новый файл: ${lang.name}`, value: lang.defaultName, validate: (v) => (/^[^\\/:*?"<>|]+$/.test(v.trim()) ? null : 'Недопустимое имя') });
   if (!name) return;
   const file = name.trim();
   const finalName = extname(file) ? file : `${file}.${lang.exts[0]}`;
-  await createFile(base, finalName, lang.template.replace(/\$\{class\}/g, clsName(finalName)));
+  await createFile(base, finalName, '');
 }
 
 /** Missing toolchain: let the user continue anyway, install it, or download it. */
