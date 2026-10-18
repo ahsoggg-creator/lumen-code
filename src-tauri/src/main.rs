@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod adapters;
 mod assoc;
 mod dap;
 mod fsx;
@@ -97,6 +98,8 @@ fn main() {
             lsp::lsp_spawn,
             lsp::lsp_send,
             lsp::lsp_close,
+            adapters::adapter_info,
+            adapters::adapter_install,
             mcp::mcp_spawn,
             mcp::mcp_send,
             mcp::mcp_close,

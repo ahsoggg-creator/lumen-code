@@ -19,6 +19,7 @@ writeFileSync(join(work, 'proj', 'main.py'), 'import os\n\ndef greet(name: str) 
 writeFileSync(join(work, 'proj', 'src', 'app.ts'), 'export const x: number = 42;\nexport function add(a: number, b: number) { return a + b; }\n');
 writeFileSync(join(work, 'proj', 'test.nix'), ['# a comment', '{ pkgs ? import <nixpkgs> {} }:', 'let name = "lumen"; n = 42; in pkgs.mkShell { buildInputs = [ pkgs.hello ]; }', ''].join(String.fromCharCode(10)));
 writeFileSync(join(work, 'proj', 'bad.py'), ['import os', '', 'undefined_name', ''].join(String.fromCharCode(10)));
+writeFileSync(join(work, 'proj', 'hello.rs'), ['fn main() {', '    let total = 40 + 2;', '    println!("{}", total);', '}', ''].join(String.fromCharCode(10)));
 writeFileSync(join(work, 'proj', 'README.md'), '# Demo\n\nSome **markdown**.\n');
 
 // A throw-away venv with debugpy so the debugger test does not touch the user's Python.
@@ -174,6 +175,29 @@ try {
     }
   } else console.log('SKIP  debugger test (could not build a venv with debugpy)');
 
+  // native debugging (CodeLLDB is downloaded from GitHub, so this only runs with LUMEN_SMOKE_NATIVE=1 and rustc installed)
+  if (process.env.LUMEN_SMOKE_NATIVE === '1') {
+    const key2 = async (code, k, vk) => { await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', code, key: k, windowsVirtualKeyCode: vk }); await send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k, windowsVirtualKeyCode: vk }); };
+    await ev('document.querySelector(".act-btn[title^=\\"Проводник\\"]")?.click()');
+    await sleep(500);
+    await ev('[...document.querySelectorAll(".tree-row")].find(r=>r.textContent.includes("hello.rs"))?.click()');
+    await sleep(800);
+    const pos2 = await ev('(() => { const l=[...document.querySelectorAll(".monaco-editor .view-line")].find(e=>e.textContent.indexOf("println")>=0); if(!l) return null; const r=l.getBoundingClientRect(); return {x:r.left+60,y:r.top+r.height/2}; })()');
+    check('native: found the line to break on', !!pos2, pos2 ? '' : await ev('JSON.stringify({rows:[...document.querySelectorAll(".tree-row")].map(r=>r.textContent), tabs:[...document.querySelectorAll(".tab-label")].map(e=>e.textContent), lines:[...document.querySelectorAll(".view-line")].map(e=>e.textContent).slice(0,5)})'));
+    if (pos2) {
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pos2.x, y: pos2.y, button: 'left', clickCount: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pos2.x, y: pos2.y, button: 'left', clickCount: 1 });
+      await key2('F9', 'F9', 120);
+      await key2('F5', 'F5', 116);
+      check('native: asks before downloading the debugger', await waitFor('!!document.querySelector(".modal .btn.primary") && document.querySelector(".modal-body").textContent.includes("SHA-256")', 30000));
+      await ev('document.querySelector(".modal .btn.primary")?.click()');
+      check('native: stops on the breakpoint', await waitFor('!!document.querySelector(".dbg-line")', 300000), await ev('[...document.querySelectorAll(".dc-line")].map(e=>e.textContent).join(" | ").slice(0,500)'));
+      check('native: variables show "total"', await waitFor('[...document.querySelectorAll(".var-name")].some(e=>e.textContent==="total")', 20000), String(await ev('[...document.querySelectorAll(".var-row")].map(e=>e.textContent).join(" | ")')));
+      await key2('F5', 'F5', 116);
+      check('native: program finishes', await waitFor('getComputedStyle(document.querySelector(".dbg-toolbar")).display === "none"', 60000), await ev('JSON.stringify({line:!!document.querySelector(".dbg-line"), tb:getComputedStyle(document.querySelector(".dbg-toolbar")).display, con:document.querySelector(".debug-console")?.textContent?.slice(-400), st:[...document.querySelectorAll(".status-item")].map(e=>e.textContent).join("|").slice(0,200)})'));
+    }
+  }
+
   // AI panel
   await ev('document.querySelector(".tb-btn[title^=\\"Чат\\"]")?.click()');
   check('AI chat panel opens', await waitFor('!!document.querySelector(".ai-view .ai-input")'));
@@ -198,6 +222,7 @@ try {
       await ev('[...document.querySelectorAll(".tree-row")].find(r=>r.textContent.includes("test.nix"))?.click()');
       check('VS Code grammar highlights a language Monaco lacks', await waitFor('new Set([...document.querySelectorAll(".monaco-editor .view-line span span")].map(e=>e.className).filter(c=>/mtk[0-9]+/.test(c))).size >= 3', 30000), String(await ev('[...new Set([...document.querySelectorAll(".monaco-editor .view-line span span")].map(e=>e.className))].join(",")')));
       await ev('document.querySelector(".act-btn[title=\\"Управление\\"]")?.click()');
+      await waitFor('[...document.querySelectorAll(".menu-item")].some(e=>e.textContent.includes("Настройки"))', 5000);
       await ev('[...document.querySelectorAll(".menu-item")].find(e=>e.textContent.includes("Настройки"))?.click()');
       check('VS Code colour theme is offered', await waitFor('[...document.querySelectorAll(".theme-card")].some(e=>e.textContent.includes("Dracula (VS Code)")) || [...document.querySelectorAll(".theme-card")].some(e=>e.textContent.includes("(VS Code)"))', 20000), String(await ev('[...document.querySelectorAll(".theme-card")].map(e=>e.textContent).join("|") + " / tabs: " + [...document.querySelectorAll(".tab-label")].map(e=>e.textContent).join("|")')));
       await ev('[...document.querySelectorAll(".theme-card")].find(e=>e.textContent.includes("(VS Code)"))?.click()');

@@ -30,10 +30,21 @@ interface AdapterCfg {
   adapterID: string;
   body: Record<string, unknown>;
   needs?: string;
+  /** Adapter downloaded on request (see `adapters.rs`); `${adapter}` is the path of its program. */
+  managed?: string;
+  /** Commands run in the file's folder before the debugger starts; a failing one stops the launch. */
+  build?: string[];
 }
+
+
+const nativeBody = { type: 'lldb', request: 'launch', program: '${out}', cwd: '${dir}', args: [], stopOnEntry: false };
+const nativeAdapter = (build: string): AdapterCfg => ({ kind: 'tcp-terminal', terminal: ['"${adapter}" --port ${port}'], request: 'launch', adapterID: 'codelldb', body: nativeBody, managed: 'codelldb', build: [build] });
 
 const BUILTIN: Record<string, AdapterCfg> = {
   python: { kind: 'tcp-terminal', terminal: ['"${python}" -m debugpy --listen 127.0.0.1:${port} --wait-for-client "${file}" ${args}'], request: 'attach', adapterID: 'python', body: { justMyCode: true }, needs: 'debugpy' },
+  c: nativeAdapter('gcc -g -O0 "${file}" -o "${out}"'),
+  cpp: nativeAdapter('g++ -g -O0 -std=c++17 "${file}" -o "${out}"'),
+  rust: nativeAdapter('rustc -g "${file}" -o "${out}"'),
 };
 
 interface Session {
@@ -200,6 +211,44 @@ async function ensureModule(python: string, mod: string): Promise<boolean> {
   return true;
 }
 
+const adaptersDir = (): string => `${app.paths.config}\\adapters`;
+
+const ADAPTER_TITLE: Record<string, string> = { codelldb: 'CodeLLDB (отладчик C, C++ и Rust)' };
+
+/** Path of a downloaded adapter; asks before downloading and shows exactly what will be fetched. */
+async function ensureManaged(id: string): Promise<string | null> {
+  const info = await ipc.adapterInfo(id, adaptersDir());
+  if (info.entry) return info.entry;
+  const title = ADAPTER_TITLE[id] ?? id;
+  if (!(await confirmDialog('Нужен отладчик', `Для отладки нужен ${title} ${info.version}. Скачать его с GitHub и установить в папку программы?\n${info.url}\nSHA-256 пакета (проверяется перед установкой):\n${info.sha256}`, 'Скачать'))) return null;
+  const toast = notify(`Скачиваю ${title}…`, { timeout: 0, progress: true });
+  try {
+    const exe = await ipc.adapterInstall(id, adaptersDir());
+    notify(`${title} установлен`);
+    return exe;
+  } catch (e) {
+    notify(`Не удалось установить отладчик: ${errText(e)}`, { kind: 'error', timeout: 12000 });
+    return null;
+  } finally { toast.close(); }
+}
+
+/** Compiles the program with debug information when the adapter config asks for it. */
+async function buildFirst(adapter: AdapterCfg, vars: Record<string, string>, cwd: string): Promise<boolean> {
+  for (const c of adapter.build ?? []) {
+    const cmd = fill(c, vars);
+    out(`$ ${cmd}`, 'info');
+    const r = await ipc.exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], cwd, 300000).catch((e) => ({ code: -1, stdout: '', stderr: errText(e) }));
+    if (r.stdout.trim()) out(r.stdout.trim(), 'out');
+    if (r.code !== 0) {
+      out(r.stderr.trim() || `код ${r.code}`, 'err');
+      shell.showPanel('debug');
+      notify(`Сборка для отладки не удалась (код ${r.code}). Нужен установленный компилятор — см. «Языки и компиляторы».`, { kind: 'error', timeout: 9000 });
+      return false;
+    }
+  }
+  return true;
+}
+
 export async function startDebug(): Promise<void> {
   if (session) {
     if (session.state === 'stopped') { await control('continue'); }
@@ -222,7 +271,13 @@ export async function startDebug(): Promise<void> {
   const id = uid('dbg');
   const client = new DapClient(id);
   const port = await ipc.freePort();
-  const vars: Record<string, string> = { file: path, dir: dirname(path), name: basename(path).replace(/\.[^.]+$/, ''), python, port: String(port), workspace: app.root ?? dirname(path), args: cfg<string>('debug.args') ?? '' };
+  const vars: Record<string, string> = { file: path, dir: dirname(path), name: basename(path).replace(/\.[^.]+$/, ''), python, port: String(port), out: `${dirname(path)}\\${basename(path).replace(/\.[^.]+$/, '')}.exe`, adapter: '', workspace: app.root ?? dirname(path), args: cfg<string>('debug.args') ?? '' };
+  if (adapter.managed) {
+    const exe = await ensureManaged(adapter.managed);
+    if (!exe) return;
+    vars.adapter = exe;
+  }
+  if (!(await buildFirst(adapter, vars, dirname(path)))) return;
   session = { client, lang, state: 'starting', thread: 0, frames: [], frame: null, scopes: [], vars: new Map(), file: path, watchRes: new Map() };
   consoleLines.length = 0;
   consoleEl?.replaceChildren();
