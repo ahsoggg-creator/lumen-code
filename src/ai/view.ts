@@ -11,6 +11,7 @@ import { confirmDialog, notify } from '../ui';
 import { h, uid } from '../util';
 import { PRESETS, AbortHandle, activeProvider, agentsChanged, apiKey, keyName, listModels, pluginAgents, providers, saveProviders, streamChat, type Msg, type Provider } from './core';
 import { registerGhostText } from './ghost';
+import { mcpTools } from './mcp';
 import { registerInlineEdit } from './inline';
 import { Checkpoint, TOOLS, dangerOf, recordTo, needsApproval, previewTool, runTool } from './tools';
 
@@ -246,7 +247,8 @@ export function registerAI(): void {
         for (let step = 0; step < max; step++) {
           const bubble = assistantBubble();
           let acc = '';
-          const res = await streamChat(p, systemPrompt(agent, await projectRules()), history, agent ? TOOLS : [], { onText: (t) => { acc += t; bubble.set(acc); } }, abort!);
+          const tools = agent ? [...TOOLS, ...(await mcpTools())] : [];
+          const res = await streamChat(p, systemPrompt(agent, await projectRules()), history, tools, { onText: (t) => { acc += t; bubble.set(acc); } }, abort!);
           if (acc) bubble.done(); else bubble.el.parentElement?.remove();
           history.push({ role: 'assistant', text: res.text, calls: res.calls });
           if (!res.calls.length || abort!.aborted) break;
@@ -254,7 +256,7 @@ export function registerAI(): void {
             const card = toolCard(call.name, call.args);
             let result: string;
             if (abort!.aborted) { result = 'Прервано пользователем'; }
-            else if (needsApproval(call.name) && !(await card.approval())) result = 'Пользователь отклонил это действие.';
+            else if (needsApproval(call.name, call.args) && !(await card.approval())) result = 'Пользователь отклонил это действие.';
             else result = await runTool(call.name, call.args);
             card.setResult(result, !result.startsWith('Ошибка') && !result.startsWith('Пользователь'));
             history.push({ role: 'tool', callId: call.id, name: call.name, result });

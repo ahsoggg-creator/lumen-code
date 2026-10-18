@@ -99,6 +99,7 @@ export const SCHEMA: SettingDef[] = [
   { key: 'ai.autoApproveReads', type: 'boolean', default: true, group: 'ИИ', label: 'Агент читает файлы без вопросов' },
   { key: 'ai.autoApproveEdits', type: 'boolean', default: false, group: 'ИИ', label: 'Агент правит файлы без подтверждения' },
   { key: 'ai.autoApproveCommands', type: 'boolean', default: false, group: 'ИИ', label: 'Агент запускает команды без подтверждения' },
+  { key: 'ai.mcpServers', type: 'array', default: [], group: 'ИИ', label: 'MCP-серверы для агента', desc: 'Например [{"name":"fs","command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}]. Серверы запускаются как программы на вашем ПК; вызовы их инструментов подтверждаются как команды.' },
   { key: 'ai.inline.enabled', type: 'boolean', default: false, group: 'ИИ', label: 'Автодополнение серым текстом (ghost-текст)', desc: 'Нужна модель с поддержкой fill-in-the-middle, например qwen2.5-coder в Ollama. Код вокруг курсора отправляется на указанный адрес.' },
   { key: 'ai.inline.url', type: 'string', default: 'http://localhost:11434/v1/completions', group: 'ИИ', label: 'Автодополнение: адрес /completions' },
   { key: 'ai.inline.model', type: 'string', default: 'qwen2.5-coder', group: 'ИИ', label: 'Автодополнение: модель' },

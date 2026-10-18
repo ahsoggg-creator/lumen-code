@@ -4,6 +4,8 @@ import { errText, ipc } from '../ipc';
 import { cfg } from '../settings';
 import { dirname, isUnder, join, normalizePath, relative, key } from '../util';
 import type { ToolDef } from './core';
+import { dangerousCommand } from './danger';
+import { callMcp, isMcpTool } from './mcp';
 
 export const TOOLS: ToolDef[] = [
   { name: 'read_file', description: 'Read a text file from the workspace. Optionally a line range (1-based, inclusive).', schema: { type: 'object', properties: { path: { type: 'string' }, start_line: { type: 'integer' }, end_line: { type: 'integer' } }, required: ['path'] } },
@@ -16,10 +18,11 @@ export const TOOLS: ToolDef[] = [
 ];
 
 export type Danger = 'read' | 'edit' | 'run';
-export const dangerOf = (name: string): Danger => (name === 'edit_file' || name === 'write_file' ? 'edit' : name === 'run_command' ? 'run' : 'read');
+export const dangerOf = (name: string): Danger => (name === 'edit_file' || name === 'write_file' ? 'edit' : name === 'run_command' || isMcpTool(name) ? 'run' : 'read');
 
-export function needsApproval(name: string): boolean {
+export function needsApproval(name: string, args: Record<string, unknown> = {}): boolean {
   const d = dangerOf(name);
+  if (name === 'run_command' && dangerousCommand(String(args.command ?? '')).length) return true; // asked even with auto-approve on
   if (d === 'read') return !cfg('ai.autoApproveReads');
   if (d === 'edit') return !cfg('ai.autoApproveEdits');
   return !cfg('ai.autoApproveCommands');
@@ -80,7 +83,12 @@ const clip = (s: string, n = 12000): string => (s.length > n ? `${s.slice(0, n)}
 export interface Preview { title: string; lines: { kind: '+' | '-' | ' '; text: string }[]; note?: string }
 
 export async function previewTool(name: string, a: Record<string, unknown>): Promise<Preview> {
-  if (name === 'run_command') return { title: 'Выполнить команду', lines: [{ kind: ' ', text: String(a.command ?? '') }], note: a.cwd ? `в папке ${a.cwd}` : undefined };
+  if (name === 'run_command') {
+    const warn = dangerousCommand(String(a.command ?? ''));
+    const note = [a.cwd ? `в папке ${a.cwd}` : '', warn.length ? `⚠ ОСТОРОЖНО: ${warn.join('; ')}` : ''].filter(Boolean).join(' · ');
+    return { title: 'Выполнить команду', lines: [{ kind: ' ', text: String(a.command ?? '') }], note: note || undefined };
+  }
+  if (isMcpTool(name)) return { title: `Вызвать MCP-инструмент ${name}`, lines: JSON.stringify(a, null, 2).split('\n').slice(0, 40).map((t) => ({ kind: ' ' as const, text: t })) };
   const path = String(a.path ?? '');
   if (name === 'write_file') {
     const content = String(a.content ?? '');
@@ -94,6 +102,7 @@ export async function previewTool(name: string, a: Record<string, unknown>): Pro
 
 export async function runTool(name: string, a: Record<string, unknown>): Promise<string> {
   try {
+    if (isMcpTool(name)) return clip(await callMcp(name, a));
     switch (name) {
       case 'read_file': {
         const p = await resolve(String(a.path));

@@ -5,6 +5,7 @@ mod dap;
 mod fsx;
 mod git;
 mod lsp;
+mod mcp;
 mod net;
 mod python;
 mod rpc;
@@ -57,6 +58,7 @@ fn main() {
         .manage(watch::Watch::default())
         .manage(dap::Daps::default())
         .manage(lsp::Lsps::default())
+        .manage(mcp::Mcps::default())
         .setup(|app| {
             if std::env::var_os("LUMEN_HEADLESS").is_some() {
                 if let Some(w) = app.get_webview_window("main") {
@@ -95,6 +97,9 @@ fn main() {
             lsp::lsp_spawn,
             lsp::lsp_send,
             lsp::lsp_close,
+            mcp::mcp_spawn,
+            mcp::mcp_send,
+            mcp::mcp_close,
             search::search_text,
             search::replace_in_files,
             search::list_files,
