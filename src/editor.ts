@@ -20,6 +20,8 @@ export interface Doc {
   dirty: boolean;
   /** Last disk mtime for which the "changed on disk" notice was shown. */
   warnedMtime: number;
+  /** Bigger than `files.largeFileMB`: the editor drops its expensive features while this document is shown. */
+  large?: boolean;
   /** Extension (without a dot) an untitled document gets when saved for the first time. */
   ext?: string;
 }
@@ -88,7 +90,7 @@ class Documents {
     if (data.binary) return 'binary';
     const mo = M();
     const model = mo.editor.createModel(data.content, languageFor(path), mo.Uri.file(path));
-    const doc: Doc = { id: uid('doc'), path: norm(path), name: basename(path), model, encoding: data.encoding, mtime: data.mtime, savedVersion: model.getAlternativeVersionId(), dirty: false, warnedMtime: 0 };
+    const doc: Doc = { id: uid('doc'), path: norm(path), name: basename(path), model, encoding: data.encoding, mtime: data.mtime, savedVersion: model.getAlternativeVersionId(), dirty: false, warnedMtime: 0, large: data.size > cfg<number>('files.largeFileMB') * 1048576 };
     this.map.set(key(path), doc);
     this.track(doc);
     this.onOpen.fire(doc);
@@ -233,7 +235,14 @@ export interface DiffSpec {
 
 const tabKey = (t: Tab): string => (t.kind === 'doc' ? `doc:${t.doc!.id}` : t.kind === 'view' ? `view:${t.view!.key}` : `diff:${t.diff!.key}`);
 
-function editorOptions(): Mn.editor.IEditorOptions & Mn.editor.IGlobalEditorOptions {
+/** Features switched off for big files (over `files.largeFileMB`): they cost time per line or per keystroke. */
+const LARGE_OPTIONS: Mn.editor.IEditorOptions = {
+  minimap: { enabled: false }, wordWrap: 'off', folding: false, stickyScroll: { enabled: false }, bracketPairColorization: { enabled: false },
+  guides: { indentation: false, bracketPairs: false }, occurrencesHighlight: 'off', selectionHighlight: false, codeLens: false, links: false,
+  colorDecorators: false, renderWhitespace: 'none', quickSuggestions: false, matchBrackets: 'never', smoothScrolling: false,
+};
+
+function editorOptions(large = false): Mn.editor.IEditorOptions & Mn.editor.IGlobalEditorOptions {
   const fs = cfg<number>('editor.fontSize');
   const lh = cfg<number>('editor.lineHeight');
   const smooth = cfg<boolean>('editor.smoothScrolling');
@@ -278,6 +287,7 @@ function editorOptions(): Mn.editor.IEditorOptions & Mn.editor.IGlobalEditorOpti
     unicodeHighlight: { ambiguousCharacters: false },
     accessibilitySupport: 'off',
     largeFileOptimizations: true,
+    ...(large ? LARGE_OPTIONS : {}),
   };
 }
 
@@ -338,6 +348,8 @@ class Group {
     this.diffModels = [];
   }
 
+  largeShown = false;
+
   show(tab: Tab | null, focus = true): void {
     if (this.active && this.active !== tab) this.saveState(this.active);
     this.active = tab;
@@ -353,6 +365,8 @@ class Group {
       this.host.style.display = '';
       const ed = this.ensureEditor();
       ed.setModel(tab.doc!.model);
+      const large = !!tab.doc!.large;
+      if (large !== this.largeShown) { this.largeShown = large; ed.updateOptions(editorOptions(large)); }
       if (tab.state) ed.restoreViewState(tab.state);
       ed.layout();
       if (focus) ed.focus();
@@ -510,7 +524,7 @@ class EditorArea {
     const o = editorOptions();
     const mo = M();
     for (const g of this.groups) {
-      g.editor?.updateOptions(o);
+      g.editor?.updateOptions(g.largeShown ? editorOptions(true) : o);
       g.diffEditor?.updateOptions(o);
     }
     mo.editor.getModels().forEach((m) => m.updateOptions({ tabSize: cfg('editor.tabSize'), insertSpaces: cfg('editor.insertSpaces') }));

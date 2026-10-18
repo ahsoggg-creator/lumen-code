@@ -72,6 +72,7 @@ export const SCHEMA: SettingDef[] = [
   { key: 'files.exclude', type: 'array', default: ['.git', '__pycache__', '.DS_Store', 'Thumbs.db'], group: 'Файлы', label: 'Скрывать в проводнике' },
   { key: 'files.restoreSession', type: 'boolean', default: true, group: 'Файлы', label: 'Восстанавливать открытые файлы' },
   { key: 'files.confirmDelete', type: 'boolean', default: true, group: 'Файлы', label: 'Подтверждать удаление' },
+  { key: 'files.largeFileMB', type: 'number', default: 5, group: 'Файлы', label: 'Режим большого файла: от скольки МБ', desc: 'Для таких файлов отключаются миникарта, перенос строк, сворачивание, подсветка скобок и вхождений.', min: 1, max: 60 },
   { key: 'files.eol', type: 'enum', default: 'auto', group: 'Файлы', label: 'Конец строки для новых файлов', options: [{ value: 'auto', label: 'авто' }, { value: '\n', label: 'LF' }, { value: '\r\n', label: 'CRLF' }] },
 
   { key: 'terminal.shell', type: 'enum', default: 'powershell', group: 'Терминал', label: 'Оболочка', options: opt('powershell', 'pwsh', 'cmd', 'gitbash', 'wsl') },
