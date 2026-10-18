@@ -6,7 +6,7 @@ import { ipc } from './ipc';
 import { openCustomCss, openKeybindingsPage, openSettingsJson, openSettingsPage, openWelcome } from './pages';
 import { settings, cfg } from './settings';
 import { shell } from './shell';
-import { noticeHistory, notify, onNotices, quickPick, type MenuItem } from './ui';
+import { dialog, noticeHistory, notify, onNotices, quickPick, type MenuItem } from './ui';
 import { basename, fmtSize, join } from './util';
 import { openFolder, pickAndOpenFile, pickAndOpenFolder, recentFolders } from './workspace';
 
@@ -112,9 +112,10 @@ export function registerWorkbench(): void {
   C('help.welcome', 'Справка: страница приветствия', () => openWelcome(recentFolders(), () => void pickAndOpenFolder(), (p) => void openFolder(p)), { cat: 'Справка' });
   C('help.docs', 'Справка: документация на GitHub', () => ipc.openUrl('https://github.com/ahsoggg/lumen-code#readme'), { cat: 'Справка' });
   C('help.issue', 'Справка: сообщить о проблеме', () => ipc.openUrl('https://github.com/ahsoggg/lumen-code/issues/new'), { cat: 'Справка' });
-  C('help.about', 'Справка: о программе', () => {
+  C('help.about', 'Справка: о программе', async () => {
     const jsMem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
-    notify(`Lumen Code ${app.version}\nTauri + Monaco · ${jsMem ? `память JS: ${fmtSize(jsMem.usedJSHeapSize)}` : ''}`, { timeout: 7000 });
+    const r = await dialog(`Lumen Code ${app.version}`, `Tauri + Monaco${jsMem ? ` · память JS: ${fmtSize(jsMem.usedJSHeapSize)}` : ''}`, [{ label: 'Закрыть' }, { label: 'Проверить наличие обновлений', primary: true }]);
+    if (r === 1) await commands.execute('help.checkUpdates');
   }, { cat: 'Справка' });
   C('markdown.preview', 'Markdown: открыть предпросмотр', () => commands.execute('markdown-preview.open'), { cat: 'Markdown', hidden: true });
 

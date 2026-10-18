@@ -186,6 +186,7 @@ export function openWelcome(recent: string[], openFolder: () => void, openRecent
             link('filePlus', 'Новый файл', () => void commands.execute('file.newUntitled'), 'ctrl+n'),
             link('folderOpen', 'Открыть папку…', openFolder, 'ctrl+k ctrl+o'),
             link('command', 'Палитра команд', () => void commands.execute('palette.commands'), 'ctrl+shift+p'),
+            link('download', 'Проверить наличие обновлений', () => void commands.execute('help.checkUpdates')),
             h('h3.mt', null, 'Недавние'),
             ...(recent.length ? recent.slice(0, 7).map((p) => h('button.welcome-link.small', { title: p, onclick: () => openRecent(p) }, h('span', { innerHTML: icon('folder', 15) }), h('span.grow', null, p.split('\\').pop() ?? p), h('span.dim.small.path', null, p))) : [h('div.dim.small', null, 'Пока пусто')])),
           h('div.welcome-col', null, h('h3', null, 'Настройте под себя'),
