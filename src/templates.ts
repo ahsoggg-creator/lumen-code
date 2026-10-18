@@ -1,6 +1,6 @@
 import { app } from './app';
 import { commands } from './commands';
-import { editors } from './editor';
+import { editors, languageFor } from './editor';
 import { ipc, errText } from './ipc';
 import { LANGS, ensureToolchain, hasTool, installToolchain, installedMap, rescanTools, type LangDef } from './toolchains';
 import { confirmDialog, dialog, inputBox, notify, quickPick, type PickItem } from './ui';
@@ -24,7 +24,7 @@ async function targetDir(preferred?: string): Promise<string | null> {
 }
 
 async function createFile(dir: string | null, fileName: string, content: string): Promise<void> {
-  if (!dir) { editors.newUntitled(content, 'plaintext'); return; }
+  if (!dir) { editors.newUntitled(content, languageFor(fileName)); return; }
   const path = join(dir, fileName);
   if (await ipc.exists(path)) {
     if (!(await confirmDialog('Файл уже есть', `«${fileName}» уже существует. Открыть его?`, 'Открыть'))) return;
@@ -32,6 +32,33 @@ async function createFile(dir: string | null, fileName: string, content: string)
     await ipc.writeFile(path, content);
   }
   await editors.openFile(path, { preview: false });
+}
+
+/** "Новый файл" (Ctrl+N): what to create right away: a blank tab, a text document or a language that is installed on this PC. */
+export async function newFileChooser(dir?: string): Promise<void> {
+  const installed = await installedMap();
+  const items: PickItem<string>[] = [
+    { label: 'Основное', value: '', header: true },
+    { label: 'Пустой документ', description: 'безымянная вкладка, тип выберете позже', icon: 'file', value: 'untitled' },
+    { label: 'Текстовый документ', description: '.txt', icon: 'fileText', value: 'text' },
+    { label: 'Установлено на этом ПК', value: '', header: true },
+    ...LANGS.filter((l) => installed.get(l.id)).map((l) => ({ label: l.name, description: `.${l.exts[0]}`, icon: 'fileText', value: `lang:${l.id}` })),
+    { label: 'Ещё', value: '', header: true },
+    { label: 'Другие языки и свои шаблоны…', description: 'в том числе ещё не установленные', icon: 'plus', value: 'more' },
+  ];
+  const pick = await quickPick(items, { placeholder: 'Что создать? (начните печатать, чтобы найти язык)' });
+  if (!pick) return;
+  if (pick.value === 'untitled') { editors.newUntitled(); return; }
+  if (pick.value === 'more') { await newFromTemplate(dir); return; }
+  const base = await targetDir(dir);
+  if (pick.value === 'text') {
+    const name = await inputBox({ title: 'Имя текстового документа', value: 'Новый текстовый документ.txt', validate: (v) => (/^[^\\/:*?"<>|]+$/.test(v.trim()) ? null : 'Недопустимое имя') });
+    if (!name) return;
+    const file = name.trim();
+    await createFile(base, extname(file) ? file : `${file}.txt`, '');
+    return;
+  }
+  await createFromLang(LANGS.find((l) => l.id === pick.value.slice(5))!, base);
 }
 
 export async function newFromTemplate(dir?: string): Promise<void> {
@@ -167,6 +194,7 @@ export async function newProject(): Promise<void> {
 }
 
 export function registerTemplates(): void {
+  commands.register({ id: 'file.newChooser', title: 'Новый файл…', category: 'Файл', hidden: true, run: (...a: never[]) => newFileChooser((a as unknown as string[])[0]) });
   commands.register({ id: 'file.newFromTemplate', title: 'Новый файл из шаблона…', category: 'Файл', keybinding: 'ctrl+alt+n', run: (...a: never[]) => newFromTemplate((a as unknown as string[])[0]) });
   commands.register({ id: 'file.newProject', title: 'Новый проект…', category: 'Файл', run: () => newProject() });
   commands.register({ id: 'file.saveAsTemplate', title: 'Сохранить файл как шаблон…', category: 'Файл', run: () => saveAsTemplate() });

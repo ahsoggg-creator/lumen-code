@@ -17,7 +17,8 @@ export function registerWorkbench(): void {
     commands.register({ id, title, category: o.cat, keybinding: o.kb, hidden: o.hidden, inTerminal: o.term, run });
 
   // ---- files
-  C('file.newUntitled', 'Новый файл', () => { editors.newUntitled(); }, { kb: 'ctrl+n', cat: 'Файл' });
+  C('file.newUntitled', 'Новый файл', () => commands.execute('file.newChooser'), { kb: 'ctrl+n', cat: 'Файл' });
+  C('file.newBlank', 'Новый пустой документ (без выбора)', () => { editors.newUntitled(); }, { kb: 'ctrl+alt+shift+n', cat: 'Файл' });
   C('file.open', 'Открыть файл…', pickAndOpenFile, { kb: 'ctrl+o', cat: 'Файл' });
   C('workspace.openFolder', 'Открыть папку…', pickAndOpenFolder, { kb: 'ctrl+k ctrl+o', cat: 'Файл' });
   C('workspace.close', 'Закрыть папку', () => openFolder(null), { cat: 'Файл' });
