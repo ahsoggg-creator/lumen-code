@@ -39,6 +39,7 @@ async function boot(): Promise<void> {
   ]);
   const { registerBuiltinPlugins2 } = await import('./plugins/builtin2');
   const { registerAssoc } = await import('./assoc');
+  const { registerLsp } = await import('./lsp');
   const { registerVsx } = await import('./views/vsx');
   const { applyAll: applyVscodeExts } = await import('./vscode/ext');
   const [{ registerRun }, { registerTemplates }, { registerDebug }, { registerOutline }] = await Promise.all([import('./run'), import('./templates'), import('./debug/debug'), import('./views/outline')]);
@@ -60,6 +61,7 @@ async function boot(): Promise<void> {
   registerTemplates();
   registerDebug();
   registerOutline();
+  await registerLsp();
   registerAssoc();
   registerVsx();
   registerPalette();

@@ -35,6 +35,14 @@ function syncChannels(): void {
   channelSelect.replaceChildren(...[...channels.keys()].map((c) => h('option', { value: c, selected: c === currentChannel }, c)));
 }
 
+/** Shows the Output panel on the given channel. */
+export function revealChannel(c: string): void {
+  if (!channels.has(c)) log(c, '');
+  showChannel(c);
+  shell.showPanel('output');
+  syncChannels();
+}
+
 function showChannel(c: string): void {
   currentChannel = c;
   if (outputEl) { outputEl.textContent = (channels.get(c) ?? []).join('\n') + '\n'; outputEl.scrollTop = outputEl.scrollHeight; }

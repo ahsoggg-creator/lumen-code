@@ -87,6 +87,9 @@ export const SCHEMA: SettingDef[] = [
   { key: 'git.enabled', type: 'boolean', default: true, group: 'Git', label: 'Включить Git' },
   { key: 'git.gutter', type: 'boolean', default: true, group: 'Git', label: 'Цветные полоски изменений рядом со строками' },
 
+  { key: 'lsp.enabled', type: 'boolean', default: true, group: 'Языки', label: 'Языковые серверы (LSP)', desc: 'Автодополнение, подсказки, переход к определению и проверка кода для Python, Rust, Go, C/C++, Lua.' },
+  { key: 'lsp.servers', type: 'object', default: {}, group: 'Языки', label: 'Настройка языковых серверов', desc: 'По id встроенного сервера (python, rust, go, clangd, lua): {"python": {"command": "pyright-langserver", "args": ["--stdio"], "disabled": false, "settings": {}}}. Новый сервер: id с "languages" и "command".' },
+  { key: 'lsp.dismissed', type: 'array', default: [], group: 'Языки', label: 'Серверы, которые не предлагать установить' },
   { key: 'ai.activeProvider', type: 'string', default: '', group: 'ИИ', label: 'Активный провайдер' },
   { key: 'ai.providers', type: 'array', default: [], group: 'ИИ', label: 'Провайдеры (ключи хранятся в хранилище Windows)' },
   { key: 'ai.systemPrompt', type: 'string', default: '', group: 'ИИ', label: 'Свои инструкции для ИИ' },
