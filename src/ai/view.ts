@@ -34,7 +34,19 @@ interface Ctx { file: boolean; selection: boolean }
 let askExternal: (prompt: string, opts?: { selection?: boolean; file?: boolean; send?: boolean }) => void = () => undefined;
 export const askAI = (prompt: string, opts?: { selection?: boolean; file?: boolean; send?: boolean }): void => askExternal(prompt, opts);
 
-function systemPrompt(agent: boolean): string {
+/** Project rules the user keeps in the workspace; read on every request so edits apply immediately. */
+async function projectRules(): Promise<string> {
+  if (!app.root) return '';
+  for (const rel of ['AGENTS.md', '.lumen\\rules.md']) {
+    try {
+      const f = await ipc.readFile(`${app.root}\\${rel}`);
+      if (!f.binary && f.content.trim()) return `Project rules (${rel}), follow them:\n${f.content.length > 20000 ? f.content.slice(0, 20000) + '\n… [truncated]' : f.content}`;
+    } catch { /* file absent */ }
+  }
+  return '';
+}
+
+function systemPrompt(agent: boolean, rules = ''): string {
   const ed = editors.active();
   const parts = [
     'You are Lumen, an expert AI coding assistant built into the Lumen Code editor. Be precise and concise. Reply in the same language as the user (usually Russian). Put code in fenced blocks with a language tag.',
@@ -43,6 +55,7 @@ function systemPrompt(agent: boolean): string {
     cfg<string>('python.interpreter') ? `Selected Python: ${cfg<string>('python.interpreter')}.` : '',
     agent ? 'You can use tools to read, search, edit files and run commands in the workspace. Prefer small, exact edits (edit_file). Read a file before editing it. After finishing, summarize what you changed.' : 'No tools are available in this mode: answer from the provided context.',
     cfg<string>('ai.systemPrompt'),
+    rules,
   ];
   return parts.filter(Boolean).join('\n');
 }
@@ -217,7 +230,7 @@ export function registerAI(): void {
         for (let step = 0; step < max; step++) {
           const bubble = assistantBubble();
           let acc = '';
-          const res = await streamChat(p, systemPrompt(agent), history, agent ? TOOLS : [], { onText: (t) => { acc += t; bubble.set(acc); } }, abort!);
+          const res = await streamChat(p, systemPrompt(agent, await projectRules()), history, agent ? TOOLS : [], { onText: (t) => { acc += t; bubble.set(acc); } }, abort!);
           if (acc) bubble.done(); else bubble.el.parentElement?.remove();
           history.push({ role: 'assistant', text: res.text, calls: res.calls });
           if (!res.calls.length || abort!.aborted) break;

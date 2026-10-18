@@ -13,7 +13,7 @@ pub struct Watch(Mutex<Option<RecommendedWatcher>>);
 fn ignored(p: &Path) -> bool {
     p.components().any(|c| {
         let n = c.as_os_str().to_string_lossy();
-        n == ".git" || n == "node_modules" || n == "target" || n == "__pycache__"
+        matches!(n.as_ref(), ".git" | "node_modules" | "target" | "__pycache__" | ".venv" | "venv" | "dist")
     })
 }
 
