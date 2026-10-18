@@ -4,10 +4,12 @@
 
 use crate::net::agent;
 use serde::Serialize;
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use tauri::{AppHandle, Emitter};
 
 const MAX_DOWNLOAD: u64 = 120 << 20;
 const MAX_UNPACKED: u64 = 700 << 20;
@@ -63,12 +65,14 @@ pub fn adapter_info(id: String, root: String) -> Result<AdapterInfo, String> {
 }
 
 /// Downloads to `tmp`, returning the SHA-256 (lower-case hex) of what was received.
-fn download(url: &str, tmp: &Path) -> Result<String, String> {
+fn download(app: &AppHandle, id: &str, url: &str, tmp: &Path) -> Result<String, String> {
     let resp = agent(Some(900)).get(url).call().map_err(|e| e.to_string())?;
     if resp.status().as_u16() >= 400 {
         return Err(format!("HTTP {}", resp.status().as_u16()));
     }
+    let size: u64 = resp.headers().get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok()).unwrap_or(0);
     let mut reader = resp.into_body().into_reader().take(MAX_DOWNLOAD + 1);
+    let mut last_emit = 0u64;
     let mut out = fs::File::create(tmp).map_err(|e| e.to_string())?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 64 * 1024];
@@ -81,6 +85,10 @@ fn download(url: &str, tmp: &Path) -> Result<String, String> {
         total += n as u64;
         if total > MAX_DOWNLOAD {
             return Err("файл отладчика слишком большой".into());
+        }
+        if total - last_emit >= 512 * 1024 {
+            last_emit = total;
+            let _ = app.emit("adapter-progress", json!({ "id": id, "done": total, "total": size }));
         }
         hasher.update(&buf[..n]);
         out.write_all(&buf[..n]).map_err(|e| e.to_string())?;
@@ -119,7 +127,7 @@ fn unpack_zip(archive: &Path, strip: &str, dir: &Path) -> Result<(), String> {
 
 /// Downloads and unpacks a pinned adapter into `<root>/<id>-<version>`; returns the path of its start program.
 #[tauri::command(async)]
-pub fn adapter_install(id: String, root: String) -> Result<String, String> {
+pub fn adapter_install(app: AppHandle, id: String, root: String) -> Result<String, String> {
     let p = preset(&id)?;
     let dir = install_dir(&root, p);
     let entry = dir.join(p.entry);
@@ -128,7 +136,7 @@ pub fn adapter_install(id: String, root: String) -> Result<String, String> {
     }
     fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     let tmp = std::env::temp_dir().join(format!("lumen-adapter-{}-{}", std::process::id(), p.id));
-    let got = download(p.url, &tmp);
+    let got = download(&app, p.id, p.url, &tmp);
     let result = got.and_then(|hash| {
         if hash != p.sha256 {
             return Err(format!("контрольная сумма не совпала (ожидалась {}, получена {hash}) — пакет не установлен", p.sha256));

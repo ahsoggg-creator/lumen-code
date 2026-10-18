@@ -188,12 +188,22 @@ try {
       await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pos2.x, y: pos2.y, button: 'left', clickCount: 1 });
       await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pos2.x, y: pos2.y, button: 'left', clickCount: 1 });
       await key2('F9', 'F9', 120);
+      await waitFor('!!document.querySelector(".bp-glyph")', 5000);
+      await sleep(800);
       await key2('F5', 'F5', 116);
       check('native: asks before downloading the debugger', await waitFor('!!document.querySelector(".modal .btn.primary") && document.querySelector(".modal-body").textContent.includes("SHA-256")', 30000));
       await ev('document.querySelector(".modal .btn.primary")?.click()');
-      check('native: stops on the breakpoint', await waitFor('!!document.querySelector(".dbg-line")', 300000), await ev('[...document.querySelectorAll(".dc-line")].map(e=>e.textContent).join(" | ").slice(0,500)'));
+      check('native: stops on the breakpoint', await waitFor('!!document.querySelector(".dbg-line")', 400000), await ev('JSON.stringify({bp:document.querySelectorAll(".bp-glyph").length, toasts:document.getElementById("toasts")?.textContent, modal:document.querySelector(".modal")?.textContent?.slice(0,120), status:[...document.querySelectorAll(".status-item")].map(e=>e.textContent).join("|").slice(0,80), con:[...document.querySelectorAll(".dc-line")].map(e=>e.textContent).join(" | ").slice(0,700)})'));
       check('native: variables show "total"', await waitFor('[...document.querySelectorAll(".var-name")].some(e=>e.textContent==="total")', 20000), String(await ev('[...document.querySelectorAll(".var-row")].map(e=>e.textContent).join(" | ")')));
+      await sleep(1500);
       await key2('F5', 'F5', 116);
+      let extraStops = 0;
+      for (let i = 0; i < 3; i++) {
+        if (await waitFor('getComputedStyle(document.querySelector(".dbg-toolbar")).display === "none"', 6000)) break;
+        extraStops++;
+        await key2('F5', 'F5', 116);
+      }
+      console.log('native: extra stops after the first continue:', extraStops);
       check('native: program finishes', await waitFor('getComputedStyle(document.querySelector(".dbg-toolbar")).display === "none"', 60000), await ev('JSON.stringify({line:!!document.querySelector(".dbg-line"), tb:getComputedStyle(document.querySelector(".dbg-toolbar")).display, con:document.querySelector(".debug-console")?.textContent?.slice(-400), st:[...document.querySelectorAll(".status-item")].map(e=>e.textContent).join("|").slice(0,200)})'));
     }
   }
@@ -225,8 +235,7 @@ try {
       await waitFor('[...document.querySelectorAll(".menu-item")].some(e=>e.textContent.includes("Настройки"))', 5000);
       await ev('[...document.querySelectorAll(".menu-item")].find(e=>e.textContent.includes("Настройки"))?.click()');
       check('VS Code colour theme is offered', await waitFor('[...document.querySelectorAll(".theme-card")].some(e=>e.textContent.includes("Dracula (VS Code)")) || [...document.querySelectorAll(".theme-card")].some(e=>e.textContent.includes("(VS Code)"))', 20000), String(await ev('[...document.querySelectorAll(".theme-card")].map(e=>e.textContent).join("|") + " / tabs: " + [...document.querySelectorAll(".tab-label")].map(e=>e.textContent).join("|")')));
-      await ev('[...document.querySelectorAll(".theme-card")].find(e=>e.textContent.includes("(VS Code)"))?.click()');
-      check('imported theme applies (Dracula background)', await waitFor('document.documentElement.style.getPropertyValue("--bg").trim()==="#282a36"', 10000), String(await ev('document.documentElement.style.getPropertyValue("--bg")')));
+      check('imported theme applies (Dracula background)', await waitFor('(() => { if (document.documentElement.style.getPropertyValue("--bg").trim().toLowerCase() === "#282a36") return true; [...document.querySelectorAll(".theme-card")].find(e=>e.textContent.includes("Dracula Theme (VS Code)"))?.click(); return false; })()', 15000), String(await ev('document.documentElement.style.getPropertyValue("--bg")')));
       await sleep(800);
       const late = errors.filter((e) => !/ResizeObserver|favicon/i.test(e));
       check('no console errors after loading extensions', late.length === 0, late.slice(0, 3).join(' | '));

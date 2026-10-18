@@ -3,7 +3,7 @@ import { app, monaco } from '../app';
 import { commands } from '../commands';
 import { docs, editors } from '../editor';
 import { icon } from '../icons';
-import { errText, ipc } from '../ipc';
+import { errText, ipc, on } from '../ipc';
 import { runInTerminal } from '../panels';
 import { runCurrent, fill } from '../run';
 import { settings, cfg } from '../settings';
@@ -11,7 +11,7 @@ import { shell } from '../shell';
 import { runTask } from '../tasks';
 import { langForPath } from '../toolchains';
 import { confirmDialog, inputBox, notify, section, showMenu } from '../ui';
-import { basename, debounce, dirname, Emitter, h, key, uid } from '../util';
+import { basename, debounce, fmtSize, dirname, Emitter, h, key, uid } from '../util';
 import { effectivePython } from '../views/python';
 import { DapClient } from './dap';
 
@@ -222,6 +222,9 @@ async function ensureManaged(id: string): Promise<string | null> {
   const title = ADAPTER_TITLE[id] ?? id;
   if (!(await confirmDialog('Нужен отладчик', `Для отладки нужен ${title} ${info.version}. Скачать его с GitHub и установить в папку программы?\n${info.url}\nSHA-256 пакета (проверяется перед установкой):\n${info.sha256}`, 'Скачать'))) return null;
   const toast = notify(`Скачиваю ${title}…`, { timeout: 0, progress: true });
+  const un = await on<{ id: string; done: number; total: number }>('adapter-progress', (p) => {
+    if (p.id === id) toast.update(`Скачиваю ${title}… ${fmtSize(p.done)}${p.total ? ` из ${fmtSize(p.total)}` : ''}`, p.total ? p.done / p.total : undefined);
+  });
   try {
     const exe = await ipc.adapterInstall(id, adaptersDir());
     notify(`${title} установлен`);
@@ -229,7 +232,7 @@ async function ensureManaged(id: string): Promise<string | null> {
   } catch (e) {
     notify(`Не удалось установить отладчик: ${errText(e)}`, { kind: 'error', timeout: 12000 });
     return null;
-  } finally { toast.close(); }
+  } finally { un(); toast.close(); }
 }
 
 /** Compiles the program with debug information when the adapter config asks for it. */
