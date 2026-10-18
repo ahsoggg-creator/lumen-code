@@ -4,8 +4,10 @@ mod assoc;
 mod dap;
 mod fsx;
 mod git;
+mod lsp;
 mod net;
 mod python;
+mod rpc;
 mod search;
 mod tasks;
 mod term;
@@ -54,6 +56,7 @@ fn main() {
         .manage(net::Streams::default())
         .manage(watch::Watch::default())
         .manage(dap::Daps::default())
+        .manage(lsp::Lsps::default())
         .setup(|app| {
             if std::env::var_os("LUMEN_HEADLESS").is_some() {
                 if let Some(w) = app.get_webview_window("main") {
@@ -89,6 +92,9 @@ fn main() {
             dap::dap_send,
             dap::dap_close,
             dap::free_port,
+            lsp::lsp_spawn,
+            lsp::lsp_send,
+            lsp::lsp_close,
             search::search_text,
             search::replace_in_files,
             search::list_files,

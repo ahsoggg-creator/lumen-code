@@ -1,6 +1,7 @@
 //! Debug Adapter Protocol transport: framed JSON over a TCP socket (e.g. debugpy started in a terminal)
 //! or over the stdio of a spawned adapter. The protocol itself lives in the UI.
 
+use crate::rpc::{frame, read_frames};
 use crate::util::command;
 use serde_json::json;
 use std::collections::HashMap;
@@ -18,40 +19,6 @@ struct Session {
     writer: Box<dyn Write + Send>,
     child: Option<Child>,
     stream: Option<TcpStream>,
-}
-
-pub fn frame(msg: &str) -> Vec<u8> {
-    format!("Content-Length: {}\r\n\r\n{}", msg.len(), msg).into_bytes()
-}
-
-fn read_frames<R: Read>(r: R, mut on_msg: impl FnMut(String)) {
-    let mut rd = BufReader::new(r);
-    loop {
-        let mut len = 0usize;
-        let mut line = String::new();
-        loop {
-            line.clear();
-            match rd.read_line(&mut line) {
-                Ok(0) | Err(_) => return,
-                Ok(_) => {}
-            }
-            let t = line.trim();
-            if t.is_empty() {
-                break;
-            }
-            if let Some(v) = t.strip_prefix("Content-Length:") {
-                len = v.trim().parse().unwrap_or(0);
-            }
-        }
-        if len == 0 {
-            continue;
-        }
-        let mut body = vec![0u8; len];
-        if rd.read_exact(&mut body).is_err() {
-            return;
-        }
-        on_msg(String::from_utf8_lossy(&body).into_owned());
-    }
 }
 
 fn pump<R: Read + Send + 'static>(app: AppHandle, id: String, r: R) {
@@ -130,26 +97,4 @@ pub fn dap_close(daps: State<'_, Daps>, id: String) {
 pub fn free_port() -> Result<u16, String> {
     let l = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
     l.local_addr().map(|a| a.port()).map_err(|e| e.to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Cursor;
-
-    #[test]
-    fn frames_roundtrip() {
-        let mut data = frame(r#"{"seq":1}"#);
-        data.extend(frame(r#"{"seq":2,"текст":"привет"}"#));
-        let mut got = Vec::new();
-        read_frames(Cursor::new(data), |m| got.push(m));
-        assert_eq!(got, vec![r#"{"seq":1}"#.to_string(), r#"{"seq":2,"текст":"привет"}"#.to_string()]);
-    }
-
-    #[test]
-    fn truncated_frame_ends_cleanly() {
-        let mut got = Vec::new();
-        read_frames(Cursor::new(b"Content-Length: 50\r\n\r\n{}".to_vec()), |m| got.push(m));
-        assert!(got.is_empty());
-    }
 }
