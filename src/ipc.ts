@@ -15,7 +15,7 @@ export interface FileMatches { path: string; matches: SearchMatch[] }
 export interface SearchResult { files: FileMatches[]; truncated: boolean }
 export interface Interp { path: string; version: string; kind: string; is_venv: boolean }
 export interface PypiInfo { name: string; version: string; summary: string; home: string; requires_python: string }
-export interface Release { tag: string; version: string; notes: string; exe_url: string; sums_url: string; size: number; page: string }
+export interface Release { tag: string; version: string; notes: string; exe_url: string; sums_url: string; size: number; page: string; setup_url?: string | null }
 export interface HttpReq { url: string; method?: string; headers?: Record<string, string>; body?: string }
 
 export const ipc = {

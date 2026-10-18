@@ -15,6 +15,7 @@ use tauri::{AppHandle, Emitter};
 
 pub const REPO: &str = "ahsoggg/lumen-code";
 const ASSET: &str = "LumenCode.exe";
+const SETUP_ASSET: &str = "LumenCode-Setup.exe";
 fn download_prefix() -> String {
     format!("https://github.com/{REPO}/")
 }
@@ -31,6 +32,9 @@ pub struct Release {
     sums_url: String,
     size: u64,
     page: String,
+    /// The installer (NSIS), used instead of swapping the file when the program was installed with it.
+    #[serde(default)]
+    setup_url: Option<String>,
 }
 
 pub fn parse_version(s: &str) -> Option<Version> {
@@ -54,6 +58,12 @@ pub fn parse_release(json: &str) -> Result<(Version, Release), String> {
             return Err(format!("refusing to download from an unexpected address: {u}"));
         }
     }
+    let setup_url = url(SETUP_ASSET);
+    if let Some(u) = &setup_url {
+        if !u.starts_with(&download_prefix()) {
+            return Err(format!("refusing to download from an unexpected address: {u}"));
+        }
+    }
     let size = find(ASSET).and_then(|x| x["size"].as_u64()).unwrap_or(0);
     Ok((
         version,
@@ -65,6 +75,7 @@ pub fn parse_release(json: &str) -> Result<(Version, Release), String> {
             exe_url,
             sums_url,
             size,
+            setup_url,
         },
     ))
 }
@@ -110,26 +121,16 @@ pub fn update_check() -> Result<Option<Release>, String> {
     Ok((version > current).then_some(rel))
 }
 
-/// Downloads, verifies, swaps the executable, starts the new one and exits.
-#[tauri::command(async)]
-pub fn update_install(app: AppHandle, release: Release) -> Result<(), String> {
-    let prefix = download_prefix();
-    if !release.exe_url.starts_with(&prefix) || !release.sums_url.starts_with(&prefix) {
-        return Err("unexpected download address".into());
-    }
-    let cur = std::env::current_exe().map_err(|e| e.to_string())?;
-    let sums_text = get_text(&release.sums_url)?;
-    let expected = parse_sums(&sums_text).remove(ASSET).ok_or_else(|| format!("SHA256SUMS.txt has no entry for {ASSET}"))?;
-
-    let target = cur.with_extension("exe.new");
+/// Downloads `url` to `target` (progress as `update-progress` events) and keeps it only if it is a Windows program with the expected SHA-256.
+fn fetch_verified(app: &AppHandle, url: &str, target: &Path, expected: &str, size_hint: u64) -> Result<(), String> {
     let dl = with_retries(|| -> Result<(), String> {
-        let resp = agent(Some(30 * 60)).get(&release.exe_url).call().map_err(|e| e.to_string())?;
+        let resp = agent(Some(30 * 60)).get(url).call().map_err(|e| e.to_string())?;
         if resp.status().as_u16() >= 400 {
             return Err(format!("HTTP {}", resp.status().as_u16()));
         }
-        let total = resp.body().content_length().unwrap_or(release.size);
+        let total = resp.body().content_length().unwrap_or(size_hint);
         let mut reader = resp.into_body().into_reader().take(MAX_DOWNLOAD);
-        let mut out = fs::File::create(&target).map_err(|e| e.to_string())?;
+        let mut out = fs::File::create(target).map_err(|e| e.to_string())?;
         let mut buf = vec![0u8; 256 << 10];
         let (mut done, mut last_emit) = (0u64, 0u64);
         loop {
@@ -147,17 +148,50 @@ pub fn update_install(app: AppHandle, release: Release) -> Result<(), String> {
         out.flush().map_err(|e| e.to_string())
     });
     if let Err(e) = dl {
-        let _ = fs::remove_file(&target);
+        let _ = fs::remove_file(target);
         return Err(e);
     }
     let _ = app.emit("update-progress", json!({ "done": 1, "total": 1, "verifying": true }));
-    let actual = sha256_file(&target).map_err(|e| e.to_string())?;
+    let actual = sha256_file(target).map_err(|e| e.to_string())?;
     let mut head = [0u8; 2];
-    let looks_exe = fs::File::open(&target).and_then(|mut f| f.read_exact(&mut head)).is_ok() && &head == b"MZ";
+    let looks_exe = fs::File::open(target).and_then(|mut f| f.read_exact(&mut head)).is_ok() && &head == b"MZ";
     if actual != expected || !looks_exe {
-        let _ = fs::remove_file(&target);
+        let _ = fs::remove_file(target);
         return Err(format!("checksum mismatch (expected {expected}, got {actual})"));
     }
+    Ok(())
+}
+
+/// Downloads, verifies, swaps the executable, starts the new one and exits.
+#[tauri::command(async)]
+pub fn update_install(app: AppHandle, release: Release) -> Result<(), String> {
+    let prefix = download_prefix();
+    if !release.exe_url.starts_with(&prefix) || !release.sums_url.starts_with(&prefix) {
+        return Err("unexpected download address".into());
+    }
+    let cur = std::env::current_exe().map_err(|e| e.to_string())?;
+    let sums_text = get_text(&release.sums_url)?;
+    let expected = parse_sums(&sums_text).remove(ASSET).ok_or_else(|| format!("SHA256SUMS.txt has no entry for {ASSET}"))?;
+
+    // Installed with the setup program (it leaves `uninstall.exe` next to the program): update through the installer.
+    let installed = cur.parent().is_some_and(|d| d.join("uninstall.exe").is_file());
+    if let (true, Some(setup_url)) = (installed, release.setup_url.as_deref()) {
+        let expected = parse_sums(&sums_text).remove(SETUP_ASSET).ok_or_else(|| format!("SHA256SUMS.txt has no entry for {SETUP_ASSET}"))?;
+        let setup = std::env::temp_dir().join(format!("LumenCode-Setup-{}.exe", release.version));
+        fetch_verified(&app, setup_url, &setup, &expected, release.size)?;
+        // The installer closes this program, so a helper shell waits for it and then starts the new version.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let line = format!("/D /C start \"\" /wait \"{}\" /S /UPDATE & start \"\" \"{}\"", setup.display(), cur.display());
+            command("cmd").raw_arg(line).spawn().map_err(|e| e.to_string())?;
+        }
+        app.exit(0);
+        return Ok(());
+    }
+
+    let target = cur.with_extension("exe.new");
+    fetch_verified(&app, &release.exe_url, &target, &expected, release.size)?;
     let old = cur.with_extension("exe.old");
     let _ = fs::remove_file(&old);
     fs::rename(&cur, &old).map_err(|e| format!("cannot replace the running program: {e}"))?;
@@ -198,6 +232,21 @@ mod tests {
         assert_eq!(r.size, 10);
         let evil = j.replace("github.com/ahsoggg/lumen-code", "evil.example/x");
         assert!(parse_release(&evil).is_err());
+    }
+
+    #[test]
+    fn release_with_installer() {
+        let base = "https://github.com/ahsoggg/lumen-code/releases/download/v0.5.1";
+        let j = format!(r#"{{"tag_name":"v0.5.1","assets":[
+          {{"name":"LumenCode.exe","size":10,"browser_download_url":"{base}/LumenCode.exe"}},
+          {{"name":"LumenCode-Setup.exe","browser_download_url":"{base}/LumenCode-Setup.exe"}},
+          {{"name":"SHA256SUMS.txt","browser_download_url":"{base}/SHA256SUMS.txt"}}]}}"#);
+        let (_, r) = parse_release(&j).unwrap();
+        assert_eq!(r.setup_url.as_deref(), Some(format!("{base}/LumenCode-Setup.exe").as_str()));
+        let evil = j.replace(&format!("{base}/LumenCode-Setup.exe"), "https://evil.example/Setup.exe");
+        assert!(parse_release(&evil).is_err());
+        // Older releases have no installer.
+        assert!(parse_release(&j.replace("LumenCode-Setup.exe", "other.bin")).unwrap().1.setup_url.is_none());
     }
 
     #[test]
