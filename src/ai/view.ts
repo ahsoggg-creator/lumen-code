@@ -10,6 +10,7 @@ import { shell } from '../shell';
 import { confirmDialog, notify } from '../ui';
 import { h, uid } from '../util';
 import { PRESETS, AbortHandle, activeProvider, agentsChanged, apiKey, keyName, listModels, pluginAgents, providers, saveProviders, streamChat, type Msg, type Provider } from './core';
+import { registerGhostText } from './ghost';
 import { registerInlineEdit } from './inline';
 import { Checkpoint, TOOLS, dangerOf, recordTo, needsApproval, previewTool, runTool } from './tools';
 
@@ -357,6 +358,7 @@ export function registerAI(): void {
   });
 
   registerInlineEdit();
+  registerGhostText();
   commands.register({ id: 'ai.toggleChat', title: 'ИИ: показать/скрыть чат', category: 'ИИ', keybinding: 'ctrl+alt+i', run: () => shell.toggleView('ai') });
   commands.register({ id: 'ai.focus', title: 'ИИ: фокус на поле ввода', category: 'ИИ', run: () => shell.showView('ai') });
   commands.register({ id: 'ai.settings', title: 'ИИ: настроить провайдеров', category: 'ИИ', run: () => { shell.showView('ai'); document.querySelector<HTMLElement>('.sidebar.secondary .side-actions button:last-child')?.click(); } });

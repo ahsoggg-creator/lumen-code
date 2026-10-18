@@ -99,6 +99,11 @@ export const SCHEMA: SettingDef[] = [
   { key: 'ai.autoApproveReads', type: 'boolean', default: true, group: 'ИИ', label: 'Агент читает файлы без вопросов' },
   { key: 'ai.autoApproveEdits', type: 'boolean', default: false, group: 'ИИ', label: 'Агент правит файлы без подтверждения' },
   { key: 'ai.autoApproveCommands', type: 'boolean', default: false, group: 'ИИ', label: 'Агент запускает команды без подтверждения' },
+  { key: 'ai.inline.enabled', type: 'boolean', default: false, group: 'ИИ', label: 'Автодополнение серым текстом (ghost-текст)', desc: 'Нужна модель с поддержкой fill-in-the-middle, например qwen2.5-coder в Ollama. Код вокруг курсора отправляется на указанный адрес.' },
+  { key: 'ai.inline.url', type: 'string', default: 'http://localhost:11434/v1/completions', group: 'ИИ', label: 'Автодополнение: адрес /completions' },
+  { key: 'ai.inline.model', type: 'string', default: 'qwen2.5-coder', group: 'ИИ', label: 'Автодополнение: модель' },
+  { key: 'ai.inline.maxTokens', type: 'number', default: 96, group: 'ИИ', label: 'Автодополнение: максимум токенов', min: 16, max: 512, step: 16 },
+  { key: 'ai.inline.delay', type: 'number', default: 350, group: 'ИИ', label: 'Автодополнение: пауза перед запросом, мс', min: 0, max: 2000, step: 50 },
   { key: 'ai.terminalAgents', type: 'array', default: [], group: 'ИИ', label: 'Свои агенты для терминала', desc: 'Например [{"name":"Aider","command":"aider"}].' },
 
   { key: 'update.check', type: 'enum', default: 'startup', group: 'Обновления', label: 'Проверка обновлений', options: [{ value: 'startup', label: 'при запуске (раз в сутки)' }, { value: 'never', label: 'только вручную' }] },
