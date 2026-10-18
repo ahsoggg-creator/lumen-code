@@ -236,3 +236,5 @@ button.chip:hover { background: var(--bg-hover); color: var(--fg); border-color:
 .assoc-ext { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--border-soft); border-radius: 20px; font-family: var(--mono); font-size: 12px; transition: all .12s; } .assoc-ext:hover { border-color: var(--border); background: var(--bg-hover); } .assoc-ext.on { background: var(--accent-soft); border-color: transparent; color: var(--accent); } .assoc-ext input { accent-color: var(--accent); }
 
 .vsx-view { padding-bottom: 24px; } .vsx-note { padding: 8px 14px; } .vsx-search { display: flex; gap: 6px; padding: 4px 12px 6px; }
+
+.ai-inline-change { background: color-mix(in srgb, var(--green) 14%, transparent); }
