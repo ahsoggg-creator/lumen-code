@@ -18,6 +18,7 @@ mkdirSync(join(work, 'proj', 'src'), { recursive: true });
 writeFileSync(join(work, 'proj', 'main.py'), 'import os\n\ndef greet(name: str) -> str:\n    return f"hello {name}"\n\nprint(greet("мир"))\n');
 writeFileSync(join(work, 'proj', 'src', 'app.ts'), 'export const x: number = 42;\nexport function add(a: number, b: number) { return a + b; }\n');
 writeFileSync(join(work, 'proj', 'test.nix'), ['# a comment', '{ pkgs ? import <nixpkgs> {} }:', 'let name = "lumen"; n = 42; in pkgs.mkShell { buildInputs = [ pkgs.hello ]; }', ''].join(String.fromCharCode(10)));
+writeFileSync(join(work, 'proj', 'bad.py'), ['import os', '', 'undefined_name', ''].join(String.fromCharCode(10)));
 writeFileSync(join(work, 'proj', 'README.md'), '# Demo\n\nSome **markdown**.\n');
 
 // A throw-away venv with debugpy so the debugger test does not touch the user's Python.
@@ -30,6 +31,11 @@ try {
   mkdirSync(join(appdata, 'LumenCode'), { recursive: true });
   writeFileSync(join(appdata, 'LumenCode', 'settings.json'), JSON.stringify({ 'python.interpreter': venvPy }));
 } catch { venvPy = ''; }
+// The language server for the LSP check; without it that check is skipped.
+let lspOk = false;
+if (venvPy) {
+  try { execFileSync(venvPy, ['-m', 'pip', 'install', '-q', 'basedpyright', '--disable-pip-version-check'], { stdio: 'ignore', timeout: 300000 }); lspOk = true; } catch { lspOk = false; }
+}
 
 const child = spawn(exe, [join(work, 'proj')], {
   env: { ...process.env, APPDATA: appdata, LUMEN_HEADLESS: '1', WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
@@ -77,6 +83,15 @@ try {
   check('tab created', await waitFor('[...document.querySelectorAll(".tab-label")].some(e=>e.textContent==="main.py")'));
   check('syntax highlighting applied', await waitFor('document.querySelectorAll(".monaco-editor .view-lines .mtk1, .monaco-editor .view-lines span[class*=mtk]").length > 5'));
 
+  if (lspOk) {
+    await ev('[...document.querySelectorAll(".tree-row")].find(r=>r.textContent.includes("bad.py"))?.click()');
+    check('LSP: status bar shows the language server', await waitFor('[...document.querySelectorAll(".status-item")].some(e=>e.textContent.includes("basedpyright"))', 60000), String(await ev('[...document.querySelectorAll(".status-item")].map(e=>e.textContent).join("|")')));
+    check('LSP: an error in bad.py is underlined', await waitFor('document.querySelectorAll(".monaco-editor .squiggly-error").length > 0', 90000));
+    // bad.py was opened as a preview tab and replaced main.py: bring main.py back for the debugger test
+    await ev('[...document.querySelectorAll(".tree-row")].find(r=>r.textContent.includes("main.py"))?.click()');
+    await waitFor('[...document.querySelectorAll(".tab-label")].some(e=>e.textContent==="main.py")');
+  } else console.log('SKIP  LSP test (could not install basedpyright)');
+
   await ev('document.querySelector(".act-btn[title=\\"Поиск\\"]")?.click()');
   check('search view opens', await waitFor('!!document.querySelector(".search-top")'));
   await ev('document.querySelector(".act-btn[title=\\"Python\\"]")?.click()');
@@ -104,6 +119,12 @@ try {
   check('settings page opens', await waitFor('!!document.querySelector(".settings-page .theme-card")'));
   await ev('[...document.querySelectorAll(".theme-card")].find(e=>e.textContent.includes("Tokyo"))?.click()');
   check('theme switches', await waitFor('getComputedStyle(document.documentElement).getPropertyValue("--bg").trim()==="#1a1b26"'));
+
+  // file menu: "New File" offers a blank document, a text document and the languages installed on this PC
+  await ev('[...document.querySelectorAll(".menu-btn")].find(b=>b.textContent==="Файл")?.click()');
+  await ev('[...document.querySelectorAll(".menu-item")].find(e=>e.textContent.trim().startsWith("Новый файл") && !e.textContent.includes("шаблона"))?.click()');
+  check('New File offers blank, text and installed languages', await waitFor('(() => { const t = [...document.querySelectorAll(".qi-label")].map(e=>e.textContent); return t.includes("Пустой документ") && t.includes("Текстовый документ") && t.includes("Python"); })()'), String(await ev('[...document.querySelectorAll(".qi-label")].map(e=>e.textContent).join(",")')));
+  await ev('document.querySelector(".qi-overlay")?.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}))');
 
   // file menu: templates
   await ev('[...document.querySelectorAll(".menu-btn")].find(b=>b.textContent==="Файл")?.click()');
