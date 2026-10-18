@@ -38,7 +38,7 @@ if (venvPy) {
 }
 
 const child = spawn(exe, [join(work, 'proj')], {
-  env: { ...process.env, APPDATA: appdata, LUMEN_HEADLESS: '1', WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
+  env: { ...process.env, APPDATA: appdata, LUMEN_HEADLESS: '1', WEBVIEW2_USER_DATA_FOLDER: join(work, 'webview'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
   stdio: 'ignore',
 });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -124,7 +124,9 @@ try {
   await ev('[...document.querySelectorAll(".menu-btn")].find(b=>b.textContent==="Файл")?.click()');
   await ev('[...document.querySelectorAll(".menu-item")].find(e=>e.textContent.trim().startsWith("Новый файл") && !e.textContent.includes("шаблона"))?.click()');
   check('New File offers blank, text and installed languages', await waitFor('(() => { const t = [...document.querySelectorAll(".qi-label")].map(e=>e.textContent); return t.includes("Пустой документ") && t.includes("Текстовый документ") && t.includes("Python"); })()'), String(await ev('[...document.querySelectorAll(".qi-label")].map(e=>e.textContent).join(",")')));
-  await ev('document.querySelector(".qi-overlay")?.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}))');
+  // choosing Python opens an unnamed tab straight away (no name prompt); the save dialog gets the extension later
+  await ev('[...document.querySelectorAll(".qi-item")].find(e=>e.querySelector(".qi-label")?.textContent==="Python")?.click()');
+  check('New File > Python opens an unnamed tab without a prompt', await waitFor('!document.querySelector(".qi-overlay") && [...document.querySelectorAll(".tab.active .tab-label")].some(e=>/^Untitled-\\d+$/.test(e.textContent))'), String(await ev('[...document.querySelectorAll(".tab.active .tab-label")].map(e=>e.textContent).join(",")')));
 
   // file menu: templates
   await ev('[...document.querySelectorAll(".menu-btn")].find(b=>b.textContent==="Файл")?.click()');
@@ -197,7 +199,7 @@ try {
       check('VS Code grammar highlights a language Monaco lacks', await waitFor('new Set([...document.querySelectorAll(".monaco-editor .view-line span span")].map(e=>e.className).filter(c=>/mtk[0-9]+/.test(c))).size >= 3', 30000), String(await ev('[...new Set([...document.querySelectorAll(".monaco-editor .view-line span span")].map(e=>e.className))].join(",")')));
       await ev('document.querySelector(".act-btn[title=\\"Управление\\"]")?.click()');
       await ev('[...document.querySelectorAll(".menu-item")].find(e=>e.textContent.includes("Настройки"))?.click()');
-      check('VS Code colour theme is offered', await waitFor('[...document.querySelectorAll(".theme-card")].some(e=>e.textContent.includes("Dracula (VS Code)")) || [...document.querySelectorAll(".theme-card")].some(e=>e.textContent.includes("(VS Code)"))', 20000));
+      check('VS Code colour theme is offered', await waitFor('[...document.querySelectorAll(".theme-card")].some(e=>e.textContent.includes("Dracula (VS Code)")) || [...document.querySelectorAll(".theme-card")].some(e=>e.textContent.includes("(VS Code)"))', 20000), String(await ev('[...document.querySelectorAll(".theme-card")].map(e=>e.textContent).join("|") + " / tabs: " + [...document.querySelectorAll(".tab-label")].map(e=>e.textContent).join("|")')));
       await ev('[...document.querySelectorAll(".theme-card")].find(e=>e.textContent.includes("(VS Code)"))?.click()');
       check('imported theme applies (Dracula background)', await waitFor('document.documentElement.style.getPropertyValue("--bg").trim()==="#282a36"', 10000), String(await ev('document.documentElement.style.getPropertyValue("--bg")')));
       await sleep(800);
