@@ -51,7 +51,6 @@ export function registerBuiltin(manifest: Manifest, activate: (api: LumenApi) =>
 const disabled = (): string[] => cfg<string[]>('plugins.disabled') ?? [];
 const approvedKey = 'lumen.plugins.approved';
 function approvedMap(): Record<string, string> { try { return JSON.parse(localStorage.getItem(approvedKey) ?? '{}') as Record<string, string>; } catch { return {}; } }
-const permSig = (m: Manifest): string => `${m.version}:${(m.permissions ?? []).join(',')}`;
 
 export type LumenApi = ReturnType<typeof makeApi>;
 
@@ -147,22 +146,34 @@ function makeApi(m: Manifest, track: (d: Disposable) => void, granted: Set<strin
   };
 }
 
-async function approve(m: Manifest, builtin = false): Promise<boolean> {
-  if (builtin) return true;
-  const perms = m.permissions ?? [];
-  if (!perms.length) return true;
+async function codeHash(dir: string, m: Manifest): Promise<string> {
+  const parts = await Promise.all([m.main ?? 'main.js', ...(m.style ? [m.style] : [])].map(async (f) => (await ipc.readFile(join(dir, f))).content));
+  const bytes = new TextEncoder().encode(JSON.stringify([m.version, m.permissions ?? [], ...parts]));
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+/** Plugins run with the editor's rights whatever they declare, so every third-party plugin needs consent, re-asked whenever its code changes. */
+async function approve(m: Manifest, info: PluginInfo): Promise<boolean> {
+  if (info.builtin || !info.dir) return true;
+  let sig: string;
+  try { sig = await codeHash(info.dir, m); } catch { return true; } // unreadable code: activation reports the real error
   const map = approvedMap();
-  if (map[m.id] === permSig(m)) return true;
+  if (map[m.id] === sig) return true;
+  const perms = m.permissions ?? [];
   const desc: Record<string, string> = { exec: 'запускать программы и команды', net: 'обращаться к интернету', fs: 'записывать файлы' };
-  const ok = await confirmDialog('Разрешения плагина', `Плагин «${m.name}» ${m.version}${m.author ? ` (${m.author})` : ''} запрашивает права: ${perms.map((p) => desc[p] ?? p).join(', ')}.\n\nПлагины выполняются с правами редактора. Включайте только тем, кому доверяете.`, 'Разрешить');
-  if (ok) { map[m.id] = permSig(m); try { localStorage.setItem(approvedKey, JSON.stringify(map)); } catch { /* ignore */ } }
+  const ok = await confirmDialog('Запуск плагина', `Плагин «${m.name}» ${m.version}${m.author ? ` (${m.author})` : ''} хочет запуститься.
+Заявленные права: ${perms.map((p) => desc[p] ?? p).join(', ') || 'нет'}.
+Код: SHA-256 ${sig.slice(0, 16)}…
+
+Плагины не изолированы от редактора: код может читать и писать файлы и запускать программы независимо от заявленных прав. Разрешайте только плагинам, которым доверяете.`, 'Разрешить');
+  if (ok) { map[m.id] = sig; try { localStorage.setItem(approvedKey, JSON.stringify(map)); } catch { /* ignore */ } }
   return ok;
 }
 
 async function activate(info: PluginInfo, activateFn?: (api: LumenApi) => unknown): Promise<void> {
   const m = info.manifest;
   if (running.has(m.id)) return;
-  if (!(await approve(m, info.builtin))) { info.state = 'disabled'; changed(); return; }
+  if (!(await approve(m, info))) { info.state = 'disabled'; changed(); return; }
   const run: Running = { disposables: [], mod: null };
   running.set(m.id, run);
   try {
@@ -268,6 +279,7 @@ export async function installFromUrl(input: string): Promise<boolean> {
     return r.body;
   };
   try {
+    if (!base.toLowerCase().startsWith('https://')) throw new Error('нужна https-ссылка');
     const m = parseJsonc<Manifest | null>(await get('plugin.json'), null);
     if (!m?.id || !/^[a-z0-9][a-z0-9._-]*$/i.test(m.id)) throw new Error('некорректный plugin.json');
     if (!(await confirmDialog('Установка плагина', `Установить «${m.name}» ${m.version}${m.author ? ` от ${m.author}` : ''}?\nИсточник: ${base}\nПрава: ${(m.permissions ?? []).join(', ') || 'нет'}\n\nПлагин выполняется с правами редактора — ставьте только то, чему доверяете.`, 'Установить'))) return false;

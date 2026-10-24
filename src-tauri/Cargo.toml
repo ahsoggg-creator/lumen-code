@@ -1,6 +1,6 @@
 [package]
 name = "lumen-code"
-version = "0.5.1"
+version = "0.6.0"
 description = "Fast, light, fully customizable code editor"
 edition = "2021"
 license = "MIT"
@@ -27,6 +27,17 @@ encoding_rs = "0.8"
 chardetng = "0.1"
 base64 = "0.22"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+zstd = "0.14"
+serialport = { version = "4", default-features = false }
+tree-sitter = "0.27"
+tree-sitter-python = "0.25"
+tree-sitter-javascript = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-rust = "0.24"
+tree-sitter-lua = "0.5"
+tree-sitter-go = "0.25"
+streaming-iterator = "0.1"
 
 [profile.release]
 opt-level = "s"

@@ -5,10 +5,13 @@ import { cfg } from '../settings';
 import { dirname, isUnder, join, normalizePath, relative, key } from '../util';
 import type { ToolDef } from './core';
 import { dangerousCommand } from './danger';
+import { outlineText } from '../structure';
+import { sensitivePath } from '../trust';
 import { callMcp, isMcpTool } from './mcp';
 
 export const TOOLS: ToolDef[] = [
   { name: 'read_file', description: 'Read a text file from the workspace. Optionally a line range (1-based, inclusive).', schema: { type: 'object', properties: { path: { type: 'string' }, start_line: { type: 'integer' }, end_line: { type: 'integer' } }, required: ['path'] } },
+  { name: 'file_outline', description: 'Signatures (classes, functions, methods, types) of a Python/JS/TS/Rust/Go/Lua file with line numbers. Much cheaper than read_file: use it first to find what to read.', schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
   { name: 'list_dir', description: 'List files and folders in a workspace directory (use "." for the root).', schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
   { name: 'search_text', description: 'Search the workspace for text or a regex. Returns file:line: text.', schema: { type: 'object', properties: { query: { type: 'string' }, regex: { type: 'boolean' }, include: { type: 'string', description: 'glob such as *.ts' } }, required: ['query'] } },
   { name: 'get_diagnostics', description: 'Get editor errors and warnings for a file (or all open files).', schema: { type: 'object', properties: { path: { type: 'string' } } } },
@@ -22,6 +25,7 @@ export const dangerOf = (name: string): Danger => (name === 'edit_file' || name 
 
 export function needsApproval(name: string, args: Record<string, unknown> = {}): boolean {
   const d = dangerOf(name);
+  if (name === 'read_file' && sensitivePath(String(args.path ?? ''))) return true;
   if (name === 'run_command' && dangerousCommand(String(args.command ?? '')).length) return true; // asked even with auto-approve on
   if (d === 'read') return !cfg('ai.autoApproveReads');
   if (d === 'edit') return !cfg('ai.autoApproveEdits');
@@ -112,6 +116,12 @@ export async function runTool(name: string, a: Record<string, unknown>): Promise
         const s = Math.max(1, Number(a.start_line ?? 1));
         const e = Math.min(lines.length, Number(a.end_line ?? lines.length));
         return clip(lines.slice(s - 1, e).map((l, i) => `${s + i}\t${l}`).join('\n'));
+      }
+      case 'file_outline': {
+        const p = await resolve(String(a.path));
+        const open = docs.find(p);
+        const o = await outlineText(p, open ? open.model.getValue() : (await ipc.readFile(p)).content);
+        return o === null ? 'Для этого типа файла нет разбора: используйте read_file' : o || '(объявлений нет)';
       }
       case 'list_dir': {
         const p = await resolve(String(a.path || '.'));

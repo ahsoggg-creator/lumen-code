@@ -84,3 +84,14 @@ export function openAssociationsPage(): void {
 export function registerAssoc(): void {
   commands.register({ id: 'file.associations', title: 'Ассоциации файлов: открывать .py и другие в Lumen Code…', category: 'Файл', run: () => openAssociationsPage() });
 }
+
+/** First launch: put Lumen Code into Explorer's "Open with" list for the known file types and add the context-menu item (HKCU only; the associations page undoes it). */
+export async function autoRegisterAssoc(): Promise<void> {
+  const flag = 'lumen.assoc.auto';
+  try { if (localStorage.getItem(flag) || (await ipc.headless())) return; } catch { return; }
+  try {
+    const all = allKnownExts();
+    await ipc.assocApply(all, all, true);
+    localStorage.setItem(flag, '1');
+  } catch { /* retried on the next launch */ }
+}

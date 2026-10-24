@@ -108,6 +108,11 @@ export function registerWorkbench(): void {
     if (!(await ipc.exists(p))) await ipc.writeFile(p, '{\n}\n');
     await editors.openFile(p, { preview: false });
   }, { cat: 'Настройки' });
+  C('workbench.trustFolder', 'Доверять этой папке (Workspace Trust)', () => {
+    if (!app.root) { notify('Сначала откройте папку', { kind: 'warn' }); return; }
+    settings.trust(app.root, true);
+    notify(`Папка добавлена в доверенные: ${app.root}`);
+  }, { cat: 'Настройки' });
   C('workbench.openConfigFolder', 'Открыть папку конфигурации', () => ipc.reveal(app.paths.config), { cat: 'Настройки' });
   C('help.welcome', 'Справка: страница приветствия', () => openWelcome(recentFolders(), () => void pickAndOpenFolder(), (p) => void openFolder(p)), { cat: 'Справка' });
   C('help.docs', 'Справка: документация на GitHub', () => ipc.openUrl('https://github.com/ahsoggg/lumen-code#readme'), { cat: 'Справка' });

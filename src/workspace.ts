@@ -3,7 +3,7 @@ import { editors } from './editor';
 import { ipc, errText } from './ipc';
 import { settings, cfg } from './settings';
 import { shell } from './shell';
-import { notify } from './ui';
+import { dialog, notify } from './ui';
 import { debounce, hashStr, join, parseJsonc } from './util';
 
 interface State { recent: string[]; lastRoot: string | null }
@@ -27,6 +27,28 @@ export const saveSession = debounce(() => {
   void ipc.writeFile(sessionPath(app.root), JSON.stringify(editors.snapshot())).catch(() => undefined);
 }, 800);
 
+const asked = new Set<string>();
+
+/** Workspace Trust: a project's own settings may start programs only after the user agrees (otherwise those keys are ignored). */
+export async function ensureTrust(): Promise<void> {
+  const root = app.root;
+  const keys = settings.pendingRestricted();
+  if (!root || settings.isTrusted(root)) return;
+  const rules: string[] = [];
+  for (const rel of ['AGENTS.md', '.lumen\\rules.md']) if (await ipc.exists(join(root, rel)).catch(() => false)) rules.push(rel);
+  if (!keys.length && !rules.length) return;
+  const sig = `${root.toLowerCase()}|${keys.sort().join(',')}|${rules.join(',')}`;
+  if (asked.has(sig)) return;
+  asked.add(sig);
+  const pick = await dialog('Доверять авторам этой папки?',
+    `В «${root}» есть файлы, влияющие на запуск программ и поведение ИИ: ${[keys.length ? `.lumen/settings.json (${keys.join(', ')})` : '', ...rules].filter(Boolean).join('; ')}.
+
+Если доверять, они смогут запускать программы на вашем ПК (языковые серверы, MCP, команды запуска) и менять подтверждения ИИ; правила проекта попадут в промпт агента. Для чужих репозиториев выбирайте «Ограниченный режим»: эти параметры и правила будут игнорироваться.`,
+    [{ label: 'Ограниченный режим', primary: true }, { label: 'Доверять на этот сеанс' }, { label: 'Доверять всегда', danger: true }]);
+  if (pick === 1 || pick === 2) settings.trust(root, pick === 2);
+  else notify('Ограниченный режим: опасные параметры проекта игнорируются. Команда «Доверять этой папке» снимает ограничение.', { kind: 'warn' });
+}
+
 export async function openFolder(path: string | null, opts: { restore?: boolean } = {}): Promise<boolean> {
   if (app.root && path !== app.root) {
     saveSession();
@@ -39,6 +61,7 @@ export async function openFolder(path: string | null, opts: { restore?: boolean 
   }
   saveState();
   await settings.setWorkspace(path);
+  await ensureTrust();
   try { await ipc.watch(path); } catch (e) { notify(`Слежение за файлами не запущено: ${errText(e)}`, { kind: 'warn' }); }
   shell.updateTitle();
   app.rootChanged.fire(path);

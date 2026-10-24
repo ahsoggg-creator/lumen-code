@@ -84,6 +84,18 @@ try {
   check('tab created', await waitFor('[...document.querySelectorAll(".tab-label")].some(e=>e.textContent==="main.py")'));
   check('syntax highlighting applied', await waitFor('document.querySelectorAll(".monaco-editor .view-lines .mtk1, .monaco-editor .view-lines span[class*=mtk]").length > 5'));
 
+  // scratchpad: toggle through the palette on main.py and wait for the inline value
+  await ev('document.querySelector(".command-center")?.click()');
+  await waitFor('!!document.querySelector(".qi-input")');
+  await ev('(() => { const i = document.querySelector(".qi-input"); i.value = ">Песочница"; i.dispatchEvent(new Event("input", { bubbles: true })); })()');
+  await waitFor('document.querySelectorAll(".qi-item").length >= 1');
+  await ev('document.querySelector(".qi-input").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))');
+  for (let i = 0; i < 3; i++) {
+    if (await waitFor('!!document.querySelector(".modal-actions .btn.primary")', 3000)) await ev('document.querySelector(".modal-actions .btn.primary").click()');
+  }
+  check('scratchpad shows the print output inline', await waitFor('(document.querySelector(".monaco-editor .view-lines")?.textContent ?? "").includes("▸")', 20000), String(await ev('(document.querySelector(".monaco-editor .view-lines")?.textContent ?? "").slice(0, 200)')));
+
+
   if (lspOk) {
     await ev('[...document.querySelectorAll(".tree-row")].find(r=>r.textContent.includes("bad.py"))?.click()');
     check('LSP: status bar shows the language server', await waitFor('[...document.querySelectorAll(".status-item")].some(e=>e.textContent.includes("basedpyright"))', 60000), String(await ev('[...document.querySelectorAll(".status-item")].map(e=>e.textContent).join("|")')));
@@ -241,6 +253,18 @@ try {
       check('no console errors after loading extensions', late.length === 0, late.slice(0, 3).join(' | '));
     } else console.log('SKIP  Open VSX tests (extensions not found)');
   } catch (e) { console.log('SKIP  Open VSX tests (offline?)', String(e).slice(0, 100)); }
+
+  // timeline, tree-sitter and serial transport (backend commands)
+  const tcall = (cmd, args) => ev(`window.__TAURI_INTERNALS__.invoke(${JSON.stringify(cmd)}, ${JSON.stringify(args)}).then(v => JSON.stringify(v), e => 'ERR ' + e)`);
+  const probeFile = join(work, 'proj', 'main.py');
+  await tcall('history_save', { path: probeFile, content: 'v1\n' });
+  await tcall('history_save', { path: probeFile, content: 'v1\nv2\n' });
+  const hist = JSON.parse(await tcall('history_list', { path: probeFile }));
+  check('history: two versions stored', Array.isArray(hist) && hist.length === 2, JSON.stringify(hist).slice(0, 100));
+  check('history: old version restores', (await tcall('history_get', { id: hist[1].id })) === JSON.stringify('v1\n'));
+  const outline = await tcall('ast_outline', { text: 'def f(a):\n    pass\n', lang: 'python' });
+  check('tree-sitter outline', outline.includes('def f(a)'), outline.slice(0, 120));
+  check('serial ports listing works', (await tcall('serial_ports', {})).startsWith('['));
 
   ws.close();
 } catch (e) {

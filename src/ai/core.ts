@@ -1,13 +1,16 @@
 import { ipc, on } from '../ipc';
+import { app } from '../app';
+import { runTask } from '../tasks';
 import { settings, cfg } from '../settings';
 import { Emitter, uid } from '../util';
 
 // ---------------------------------------------------------------- providers
-export type ProviderKind = 'openai' | 'anthropic';
+export type ProviderKind = 'openai' | 'anthropic' | 'claude-cli';
 export interface Provider { id: string; name: string; kind: ProviderKind; baseUrl: string; model: string; needsKey?: boolean }
 
 export const PRESETS: { name: string; kind: ProviderKind; baseUrl: string; model: string; needsKey: boolean; hint?: string }[] = [
   { name: 'Anthropic (Claude)', kind: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-5-5', needsKey: true },
+  { name: 'Claude по подписке (Claude Code CLI)', kind: 'claude-cli', baseUrl: '', model: 'sonnet', needsKey: false, hint: 'Нужен установленный Claude Code и вход через `claude auth login`. Только чат, без инструментов агента.' },
   { name: 'OpenAI', kind: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o', needsKey: true },
   { name: 'OpenRouter', kind: 'openai', baseUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.5', needsKey: true },
   { name: 'Ollama (локально)', kind: 'openai', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5-coder', needsKey: false },
@@ -87,9 +90,18 @@ function wire(): void {
   void on<{ id: string; error: string | null; status: number }>('http-end', (p) => streams.get(p.id)?.end(p.error, p.status));
 }
 
-export class AbortHandle { aborted = false; private id: string | null = null; set(id: string): void { this.id = id; if (this.aborted) void ipc.httpCancel(id); } abort(): void { this.aborted = true; if (this.id) void ipc.httpCancel(this.id); } }
+export class AbortHandle {
+  aborted = false;
+  private id: string | null = null;
+  private extra: (() => void)[] = [];
+  set(id: string): void { this.id = id; if (this.aborted) void ipc.httpCancel(id); }
+  /** Runs `fn` on abort (immediately if already aborted): for work that is not an HTTP stream. */
+  onAbort(fn: () => void): void { if (this.aborted) fn(); else this.extra.push(fn); }
+  abort(): void { this.aborted = true; if (this.id) void ipc.httpCancel(this.id); for (const f of this.extra.splice(0)) f(); }
+}
 
 export async function streamChat(p: Provider, system: string, msgs: Msg[], tools: ToolDef[], h: StreamHandlers, abort: AbortHandle): Promise<StreamResult> {
+  if (p.kind === 'claude-cli') return streamClaudeCli(p, system, msgs, h, abort);
   wire();
   const key = await apiKey(p);
   if (!key && p.needsKey !== false) throw new Error(`Не задан API-ключ для «${p.name}». Откройте панель ИИ → шестерёнка.`);
@@ -161,12 +173,49 @@ export async function streamChat(p: Provider, system: string, msgs: Msg[], tools
   return { text, calls, stop };
 }
 
+const psq = (s: string): string => `'${s.replace(/'/g, "''")}'`;
+
+/** Chat through the user's own Claude Code login (subscription): the official `claude -p` CLI, no tools, history passed as text. */
+async function streamClaudeCli(p: Provider, system: string, msgs: Msg[], h: StreamHandlers, abort: AbortHandle): Promise<StreamResult> {
+  const dir = `${app.paths.config}\\claude-chat`;
+  await ipc.mkdir(dir);
+  const turns = msgs.filter((m): m is Extract<Msg, { role: 'user' | 'assistant' }> => m.role !== 'tool').map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.text}`);
+  const prompt = `<instructions>\n${system}\nNo tools are available in this chat: answer from the provided context only.\n</instructions>\n\n${turns.join('\n\n')}\n\nAssistant:`;
+  const file = `${dir}\\prompt-${uid('p')}.txt`;
+  await ipc.writeFile(file, prompt);
+  const utf8 = '$e=[Text.UTF8Encoding]::new($false);$OutputEncoding=$e;[Console]::OutputEncoding=$e;';
+  const cmd = `${utf8}Get-Content -Raw -Encoding UTF8 -LiteralPath ${psq(file)} | claude -p --output-format stream-json --verbose --include-partial-messages --no-session-persistence --tools '' --setting-sources '' --strict-mcp-config --disable-slash-commands --model ${psq(p.model || 'sonnet')}`;
+  let text = '';
+  let err = '';
+  let failed = '';
+  const task = runTask('powershell', ['-NoProfile', '-NonInteractive', '-Command', cmd], {
+    cwd: dir,
+    onLine: (line, stream) => {
+      if (stream === 'stderr') { err += `${line}\n`; return; }
+      let j: { type?: string; event?: { type?: string; delta?: { type?: string; text?: string } }; is_error?: boolean; result?: string };
+      try { j = JSON.parse(line); } catch { return; }
+      if (j.type === 'stream_event' && j.event?.type === 'content_block_delta' && j.event.delta?.type === 'text_delta' && j.event.delta.text) { text += j.event.delta.text; h.onText?.(j.event.delta.text); }
+      else if (j.type === 'result' && j.is_error) failed = j.result ?? 'ошибка Claude Code';
+    },
+  });
+  abort.onAbort(task.kill);
+  const code = await task.done;
+  void ipc.remove(file, true).catch(() => undefined);
+  if (abort.aborted) return { text, calls: [], stop: 'abort' };
+  if (failed || (code !== 0 && !text)) {
+    const why = failed || err.trim() || `код выхода ${code}`;
+    throw new Error(/not recognized|не распознан|CommandNotFound/i.test(why) ? 'Claude Code не найден в PATH: установите его и выполните `claude auth login`' : why.slice(0, 600));
+  }
+  return { text, calls: [], stop: 'end_turn' };
+}
+
 function safeJson(s: string): Record<string, unknown> {
   if (!s.trim()) return {};
   try { return JSON.parse(s) as Record<string, unknown>; } catch { return {}; }
 }
 
 export async function listModels(p: Provider): Promise<string[]> {
+  if (p.kind === 'claude-cli') return ['sonnet', 'opus', 'haiku'];
   const key = await apiKey(p);
   const url = p.kind === 'anthropic' ? `${p.baseUrl.replace(/\/+$/, '')}/v1/models?limit=100` : `${p.baseUrl.replace(/\/+$/, '')}/models`;
   const r = await ipc.http({ url, method: 'GET', headers: headers(p, key) });

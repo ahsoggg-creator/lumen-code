@@ -1,5 +1,6 @@
 import { ipc } from './ipc';
-import { Emitter, debounce, join, parseJsonc } from './util';
+import { RESTRICTED_KEYS } from './trust';
+import { Emitter, debounce, isUnder, join, parseJsonc } from './util';
 
 export type SettingType = 'boolean' | 'number' | 'string' | 'enum' | 'color' | 'array' | 'object' | 'font';
 export interface SettingDef {
@@ -70,6 +71,7 @@ export const SCHEMA: SettingDef[] = [
   { key: 'files.autoSave', type: 'enum', default: 'off', group: 'Файлы', label: 'Автосохранение', options: opt('off', 'afterDelay', 'onFocusChange') },
   { key: 'files.autoSaveDelay', type: 'number', default: 1000, group: 'Файлы', label: 'Задержка автосохранения, мс', min: 200, max: 30000, step: 100 },
   { key: 'files.exclude', type: 'array', default: ['.git', '__pycache__', '.DS_Store', 'Thumbs.db'], group: 'Файлы', label: 'Скрывать в проводнике' },
+  { key: 'history.enabled', type: 'boolean', default: true, group: 'Файлы', label: 'Машина времени: сохранять версии файлов', desc: 'При каждом сохранении и после паузы в наборе версия пишется в локальную базу (SQLite + zstd), хранится до 300 версий на файл.' },
   { key: 'files.restoreSession', type: 'boolean', default: true, group: 'Файлы', label: 'Восстанавливать открытые файлы' },
   { key: 'files.confirmDelete', type: 'boolean', default: true, group: 'Файлы', label: 'Подтверждать удаление' },
   { key: 'files.largeFileMB', type: 'number', default: 5, group: 'Файлы', label: 'Режим большого файла: от скольки МБ', desc: 'Для таких файлов отключаются миникарта, перенос строк, сворачивание, подсветка скобок и вхождений.', min: 1, max: 60 },
@@ -88,6 +90,7 @@ export const SCHEMA: SettingDef[] = [
   { key: 'git.enabled', type: 'boolean', default: true, group: 'Git', label: 'Включить Git' },
   { key: 'git.gutter', type: 'boolean', default: true, group: 'Git', label: 'Цветные полоски изменений рядом со строками' },
 
+  { key: 'security.trustedFolders', type: 'array', default: [], group: 'Безопасность', label: 'Доверенные папки', desc: 'Проекты (и вложенные папки), чьи .lumen/settings.json могут запускать программы: языковые серверы, MCP, команды запуска и т.п.' },
   { key: 'lsp.enabled', type: 'boolean', default: true, group: 'Языки', label: 'Языковые серверы (LSP)', desc: 'Автодополнение, подсказки, переход к определению и проверка кода для Python, Rust, Go, C/C++, Lua.' },
   { key: 'lsp.servers', type: 'object', default: {}, group: 'Языки', label: 'Настройка языковых серверов', desc: 'По id встроенного сервера (python, rust, go, clangd, lua): {"python": {"command": "pyright-langserver", "args": ["--stdio"], "disabled": false, "settings": {}}}. Новый сервер: id с "languages" и "command".' },
   { key: 'lsp.dismissed', type: 'array', default: [], group: 'Языки', label: 'Серверы, которые не предлагать установить' },
@@ -123,6 +126,8 @@ export const SCHEMA: SettingDef[] = [
   { key: 'keybindings', type: 'object', default: {}, group: 'Клавиши', label: 'Сочетания клавиш', desc: '{"ctrl+alt+r": "workbench.reload", "ctrl+b": ""} — пустая строка отвязывает.' },
 ];
 
+const restricted = new Set(RESTRICTED_KEYS);
+
 const defs = new Map<string, SettingDef>(SCHEMA.map((d) => [d.key, d]));
 
 export function defOf(key: string): SettingDef | undefined { return defs.get(key); }
@@ -137,6 +142,7 @@ class Settings {
   private user: Record<string, unknown> = {};
   private ws: Record<string, unknown> = {};
   private wsRoot: string | null = null;
+  private sessionTrusted = new Set<string>();
   private userFile = '';
   readonly changed = new Emitter<string[]>();
   readonly saved = new Emitter<string>();
@@ -174,8 +180,27 @@ class Settings {
     if (this.wsRoot) await this.setWorkspace(this.wsRoot);
   }
 
+  /** Folders the user trusted for good, plus those trusted for this session only. */
+  isTrusted(root: string | null = this.wsRoot): boolean {
+    if (!root) return true;
+    const list = this.user['security.trustedFolders'];
+    return [...this.sessionTrusted, ...(Array.isArray(list) ? list : [])].some((t) => typeof t === 'string' && isUnder(t, root));
+  }
+
+  trust(root: string, forever: boolean): void {
+    if (forever) {
+      const list = this.user['security.trustedFolders'];
+      this.user['security.trustedFolders'] = [...(Array.isArray(list) ? list : []), root];
+      this.pendingUser();
+    } else this.sessionTrusted.add(root);
+    this.changed.fire([...restricted]);
+  }
+
+  /** Restricted keys the open workspace asks to set (they are ignored until the folder is trusted). */
+  pendingRestricted(): string[] { return Object.keys(this.ws).filter((k) => restricted.has(k)); }
+
   get<T = unknown>(key: string): T {
-    if (key in this.ws) return this.ws[key] as T;
+    if (key in this.ws && (!restricted.has(key) || this.isTrusted())) return this.ws[key] as T;
     if (key in this.user) return this.user[key] as T;
     return defs.get(key)?.default as T;
   }

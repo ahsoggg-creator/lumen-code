@@ -238,3 +238,14 @@ button.chip:hover { background: var(--bg-hover); color: var(--fg); border-color:
 .vsx-view { padding-bottom: 24px; } .vsx-note { padding: 8px 14px; } .vsx-search { display: flex; gap: 6px; padding: 4px 12px 6px; }
 
 .ai-inline-change { background: color-mix(in srgb, var(--green) 14%, transparent); }
+
+/* serial monitor */
+.serial { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.serial-bar { display: flex; gap: 6px; align-items: center; padding: 6px 8px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+.serial-bar .field { min-width: 90px; }
+.serial-body { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr); flex: 1; min-height: 0; }
+.serial-col { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); }
+.serial-col .serial-bar { border-top: 1px solid var(--border); border-bottom: 0; flex-wrap: nowrap; }
+.serial-col .serial-bar .field:first-child { flex: 1; }
+.serial-log { flex: 1; margin: 0; padding: 8px 10px; overflow: auto; font-family: var(--font-mono, monospace); font-size: 12.5px; white-space: pre-wrap; word-break: break-all; min-height: 0; }
+.serial-plot { width: 100%; height: 100%; min-height: 0; display: block; }

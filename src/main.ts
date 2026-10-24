@@ -14,7 +14,7 @@ async function boot(): Promise<void> {
   app.paths = await ipc.paths();
   app.version = await ipc.version();
   await settings.init(app.paths.config);
-  const { initWorkspace, openFolder, lastRoot, recentFolders, pickAndOpenFolder, saveSession } = await import('./workspace');
+  const { initWorkspace, ensureTrust, openFolder, lastRoot, recentFolders, pickAndOpenFolder, saveSession } = await import('./workspace');
   await initWorkspace();
   applyAppearance();
   void loadCustomCss();
@@ -38,7 +38,8 @@ async function boot(): Promise<void> {
     import('./panels'), import('./palette'), import('./workbench'), import('./update'), import('./plugins/builtin'), import('./plugins/host'), import('./pages'),
   ]);
   const { registerBuiltinPlugins2 } = await import('./plugins/builtin2');
-  const { registerAssoc } = await import('./assoc');
+  const { registerAssoc, autoRegisterAssoc } = await import('./assoc');
+  const [{ registerHistory }, { registerSerial }, { registerStructure }, { registerScratch }, { registerMcpCatalog }] = await Promise.all([import('./history'), import('./serial'), import('./structure'), import('./scratch'), import('./mcpcatalog')]);
   const { registerLsp } = await import('./lsp');
   const { registerVsx } = await import('./views/vsx');
   const { applyAll: applyVscodeExts } = await import('./vscode/ext');
@@ -63,6 +64,12 @@ async function boot(): Promise<void> {
   registerOutline();
   await registerLsp();
   registerAssoc();
+  registerHistory();
+  registerSerial();
+  registerStructure();
+  registerScratch();
+  registerMcpCatalog();
+  if (!import.meta.env.DEV) void autoRegisterAssoc();
   registerVsx();
   registerPalette();
   registerWorkbench();
@@ -97,7 +104,7 @@ async function boot(): Promise<void> {
     if (!d.path) return;
     const p = d.path.toLowerCase();
     if (p === settings.userPath.toLowerCase()) void settings.reloadUser();
-    else if (p === settings.workspacePath?.toLowerCase()) void settings.reloadWorkspace();
+    else if (p === settings.workspacePath?.toLowerCase()) void settings.reloadWorkspace().then(ensureTrust);
     else if (p === join(app.paths.config, 'custom.css').toLowerCase()) void loadCustomCss();
   });
   editors.tabsChanged.on(() => saveSession());

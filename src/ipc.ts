@@ -16,10 +16,14 @@ export interface SearchResult { files: FileMatches[]; truncated: boolean }
 export interface Interp { path: string; version: string; kind: string; is_venv: boolean }
 export interface PypiInfo { name: string; version: string; summary: string; home: string; requires_python: string }
 export interface Release { tag: string; version: string; notes: string; exe_url: string; sums_url: string; size: number; page: string; setup_url?: string | null }
+export interface Sig { kind: string; name: string; signature: string; line: number; end_line: number; depth: number }
+export interface AstMatch { line: number; col: number; end_line: number; end_col: number; text: string; captures: [string, string][] }
+export interface Version { id: number; ts: number; size: number }
 export interface HttpReq { url: string; method?: string; headers?: Record<string, string>; body?: string }
 
 export const ipc = {
   paths: () => invoke<Paths>('get_paths'),
+  headless: () => invoke<boolean>('is_headless'),
   ready: () => invoke<void>('app_ready'),
   readDir: (path: string) => invoke<Entry[]>('read_dir', { path }),
   readFile: (path: string, encoding?: string) => invoke<FileData>('read_file', { path, encoding: encoding ?? null }),
@@ -52,6 +56,17 @@ export const ipc = {
   adapterInfo: (id: string, root: string) => invoke<{ id: string; version: string; url: string; sha256: string; entry: string | null }>('adapter_info', { id, root }),
   adapterInstall: (id: string, root: string) => invoke<string>('adapter_install', { id, root }),
   mcpClose: (id: string) => invoke<void>('mcp_close', { id }),
+  historySave: (path: string, content: string) => invoke<boolean>('history_save', { path, content }),
+  historyList: (path: string) => invoke<Version[]>('history_list', { path }),
+  historyGet: (id: number) => invoke<string>('history_get', { id }),
+  serialPorts: () => invoke<{ name: string; kind: string }[]>('serial_ports'),
+  serialOpen: (id: string, port: string, baud: number) => invoke<void>('serial_open', { id, port, baud }),
+  serialWrite: (id: string, data: string) => invoke<void>('serial_write', { id, data }),
+  serialClose: (id: string) => invoke<void>('serial_close', { id }),
+  astOutline: (text: string, lang: string) => invoke<Sig[]>('ast_outline', { text, lang }),
+  astSearch: (root: string, lang: string, query: string, max?: number) => invoke<{ path: string; matches: AstMatch[] }[]>('ast_search', { root, lang, query, max: max ?? null }),
+  astReplace: (files: string[], lang: string, query: string, template: string) => invoke<number>('ast_replace', { files, lang, query, template }),
+  scratchInstrument: (text: string, lang: string) => invoke<string>('scratch_instrument', { text, lang }),
   openUrl: (url: string) => invoke<void>('open_external', { url }),
   search: (opts: SearchOpts) => invoke<SearchResult>('search_text', { opts }),
   replaceIn: (opts: SearchOpts, replacement: string, files: string[]) => invoke<number>('replace_in_files', { opts, replacement, files }),

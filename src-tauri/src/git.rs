@@ -35,8 +35,15 @@ pub struct Commit {
     subject: String,
 }
 
+/// `git` without the repo-config hooks that run a program on a plain `status` (a cloned repo's `core.fsmonitor`) or via `ext::` remotes.
+fn git_cmd() -> std::process::Command {
+    let mut c = command("git");
+    c.args(["-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never"]);
+    c
+}
+
 fn run(cwd: &str, args: &[&str]) -> Result<String, String> {
-    let out = command("git").current_dir(cwd).args(args).output().map_err(|e| format!("git: {e}"))?;
+    let out = git_cmd().current_dir(cwd).args(args).output().map_err(|e| format!("git: {e}"))?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     } else {
@@ -155,7 +162,7 @@ pub fn git_log(root: String, limit: u32, path: Option<String>) -> Vec<Commit> {
 /// Runs `git <args>` and returns the exit code with both streams (used for stage/commit/checkout/push...).
 #[tauri::command(async)]
 pub fn git_exec(cwd: String, args: Vec<String>) -> ExecOut {
-    match command("git").current_dir(&cwd).args(&args).output() {
+    match git_cmd().current_dir(&cwd).args(&args).output() {
         Ok(o) => ExecOut {
             code: o.status.code().unwrap_or(-1),
             stdout: String::from_utf8_lossy(&o.stdout).into_owned(),

@@ -1,16 +1,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod adapters;
+mod ast;
 mod assoc;
 mod dap;
 mod fsx;
 mod git;
+mod history;
 mod lsp;
 mod mcp;
 mod net;
 mod python;
 mod rpc;
 mod search;
+mod serial;
 mod tasks;
 mod term;
 mod update;
@@ -28,6 +31,11 @@ fn app_ready(window: tauri::WebviewWindow) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+#[tauri::command]
+fn is_headless() -> bool {
+    std::env::var_os("LUMEN_HEADLESS").is_some()
 }
 
 fn main() {
@@ -60,6 +68,8 @@ fn main() {
         .manage(dap::Daps::default())
         .manage(lsp::Lsps::default())
         .manage(mcp::Mcps::default())
+        .manage(history::History::default())
+        .manage(serial::Serials::default())
         .setup(|app| {
             if std::env::var_os("LUMEN_HEADLESS").is_some() {
                 if let Some(w) = app.get_webview_window("main") {
@@ -70,6 +80,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             app_ready,
+            is_headless,
             fsx::get_paths,
             fsx::read_dir,
             fsx::read_file,
@@ -131,6 +142,17 @@ fn main() {
             update::update_check,
             update::update_install,
             watch::watch_root,
+            history::history_save,
+            history::history_list,
+            history::history_get,
+            serial::serial_ports,
+            serial::serial_open,
+            serial::serial_write,
+            serial::serial_close,
+            ast::ast_outline,
+            ast::ast_search,
+            ast::ast_replace,
+            ast::scratch_instrument,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lumen Code");
