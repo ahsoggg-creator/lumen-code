@@ -10,7 +10,7 @@ use tauri::{AppHandle, Emitter, State};
 #[derive(Default)]
 pub struct Tasks(Mutex<HashMap<String, Arc<Mutex<Child>>>>);
 
-fn prepare(program: &str, args: &[String], cwd: &Option<String>, env: &HashMap<String, String>) -> std::process::Command {
+pub(crate) fn prepare(program: &str, args: &[String], cwd: &Option<String>, env: &HashMap<String, String>) -> std::process::Command {
     let mut c = command(program);
     c.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     c.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8").env("PYTHONUNBUFFERED", "1");

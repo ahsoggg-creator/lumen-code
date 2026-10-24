@@ -3,16 +3,20 @@ import { commands } from './commands';
 import { editors } from './editor';
 import { errText, ipc, on } from './ipc';
 import { log, revealChannel } from './panels';
+import { crashAddresses, isCrashHeader, matchProjectFile, networkPorts } from './crash';
 import { parsePlot } from './plot';
 import { runTask } from './tasks';
 import { hasTool } from './toolchains';
-import { notify, inputBox } from './ui';
+import { notify, inputBox, quickPick, type PickItem } from './ui';
 import { dirname, h, uid } from './util';
 
 const BAUDS = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 74880, 115200, 230400, 460800, 921600];
 const COLORS = ['#f38ba8', '#a6e3a1', '#89b4fa', '#f9e2af', '#cba6f7', '#94e2d5', '#fab387', '#f5c2e7'];
 const MAX_POINTS = 600;
 const MAX_LOG = 3000;
+const MAX_LOG_CHARS = 256 * 1024;
+const MAX_LINE = 4096;
+const PLOT_LINES_PER_BATCH = 200;
 const CHANNEL = 'Прошивка';
 
 class Plotter {
@@ -113,13 +117,72 @@ function render(host: HTMLElement): () => void {
     status.textContent = 'не подключено';
   }
 
-  function onData(data: string): void {
+  function onData(data: string, dropped = 0): void {
+    if (dropped > 0) { lines.push(`[… пропущено ${dropped} байт: устройство шлёт быстрее, чем можно показать]`); carry = ''; }
     const text = carry + data;
     const parts = text.split(/\r?\n/);
     carry = parts.pop() ?? '';
-    for (const l of parts) { lines.push(l); plot.push(l); }
+    if (carry.length > MAX_LINE) { parts.push(carry.slice(0, MAX_LINE)); carry = carry.slice(MAX_LINE); }
+    for (const l of parts) lines.push(l.length > MAX_LINE ? l.slice(0, MAX_LINE) : l);
+    // The plotter only needs the freshest values of a burst, and decoding looks at every line once.
+    for (const l of parts.slice(-PLOT_LINES_PER_BATCH)) plot.push(l);
+    for (const l of parts.slice(-500)) watchCrash(l);
     if (lines.length > MAX_LOG) lines.splice(0, lines.length - MAX_LOG);
+    // The log is also bounded by size: a few thousand 4 KB lines would be megabytes of text to re-render every tick.
+    let chars = lines.reduce((n, l) => n + l.length + 1, 0);
+    while (chars > MAX_LOG_CHARS && lines.length > 1) chars -= lines.shift()!.length + 1;
     dirty = true;
+  }
+
+  // ---- crash decoder: Backtrace lines -> function, file and line through addr2line and the project's .elf
+  const elfInput = h('input.field', { placeholder: '.elf текущей сборки (ищется автоматически)', value: localStorage.getItem('lumen.serial.elf') ?? '', spellcheck: false, onchange: () => localStorage.setItem('lumen.serial.elf', elfInput.value.trim()) });
+  const crashBox = h('div.serial-crash');
+  let lastAddrs: string[] = [];
+  let projectFiles: string[] | null = null;
+
+  async function findElf(): Promise<string> {
+    const set = elfInput.value.trim();
+    if (set && (await ipc.exists(set).catch(() => false))) return set;
+    const root = sketchDir();
+    if (!root) return '';
+    const all = (await ipc.listFiles(root, 20000).catch(() => [] as string[])).filter((p) => /\.elf$/i.test(p) && !/bootloader/i.test(p));
+    const pick = all.find((p) => /[\\/](build|\.pio)[\\/]/i.test(p)) ?? all[0] ?? '';
+    if (pick) { elfInput.value = pick; localStorage.setItem('lumen.serial.elf', pick); }
+    return pick;
+  }
+
+  async function openFrame(file: string, line: number): Promise<void> {
+    projectFiles ??= app.root ? await ipc.listFiles(app.root, 50000).catch(() => []) : [];
+    const path = (await ipc.exists(file).catch(() => false)) ? file : matchProjectFile(file, projectFiles);
+    if (!path) { notify(`Файл не найден в проекте: ${file}`, { kind: 'warn' }); return; }
+    await editors.openFile(path, { line, preview: false });
+  }
+
+  async function decode(addrs: string[], title: string): Promise<void> {
+    lastAddrs = addrs;
+    const head = h('div.crash-head', null, h('b', null, title), h('button.btn', { onclick: () => void decode(lastAddrs, title) }, 'Расшифровать снова'), h('button.icon-btn', { title: 'Закрыть', onclick: () => crashBox.replaceChildren() }, '×'));
+    const body = h('div.crash-body', null, 'Расшифровываю…');
+    crashBox.replaceChildren(head, body);
+    try {
+      const elf = await findElf();
+      if (!elf) { body.textContent = 'Не найден .elf: соберите проект (arduino-cli compile) или укажите путь к .elf выше.'; return; }
+      const frames = await ipc.decodeBacktrace(elf, addrs);
+      if (!frames.length) { body.textContent = `Адреса не расшифрованы (${addrs.join(' ')}). Проверьте, что .elf от той же сборки, что и прошивка в плате.`; return; }
+      body.replaceChildren(...frames.map((f) => h('div.crash-frame', null, h('span.dim', null, f.addr), ' ', h('b', null, f.func), ' ',
+        h('a.crash-link', { href: '#', title: f.file, onclick: (e: Event) => { e.preventDefault(); void openFrame(f.file, f.line); } }, `${f.file.split(/[\\/]/).pop()}:${f.line}`))));
+    } catch (e) { body.textContent = errText(e); }
+  }
+
+  let crashTimer = 0;
+  let pendingAddrs: string[] = [];
+  let crashTitle = 'Падение микроконтроллера';
+  function watchCrash(line: string): void {
+    if (isCrashHeader(line)) crashTitle = line.trim().slice(0, 90);
+    const a = crashAddresses(line);
+    if (!a.length) return;
+    pendingAddrs = [...new Set([...pendingAddrs, ...a])].slice(0, 32);
+    clearTimeout(crashTimer);
+    crashTimer = window.setTimeout(() => { const batch = pendingAddrs; pendingAddrs = []; void decode(batch, crashTitle); }, 400);
   }
 
   const tick = window.setInterval(() => {
@@ -144,7 +207,7 @@ function render(host: HTMLElement): () => void {
   };
   async function fw(program: string, args: string[], cwd?: string): Promise<number> {
     revealChannel(CHANNEL);
-    log(CHANNEL, `> ${program} ${args.join(' ')}`);
+    log(CHANNEL, `> ${program} ${args.join(' ').replace(/(password=)\S+/g, '$1***')}`);
     const t = runTask(program, args, { cwd, onLine: (l) => log(CHANNEL, l) });
     const code = await t.done;
     log(CHANNEL, code === 0 ? '✔ готово' : `✖ код выхода ${code}`);
@@ -159,6 +222,24 @@ function render(host: HTMLElement): () => void {
   async function cli(args: string[]): Promise<void> {
     if (!(await hasTool('arduino-cli'))) { notify('arduino-cli не найден в PATH: https://arduino.github.io/arduino-cli/', { kind: 'warn' }); return; }
     await fw('arduino-cli', args, sketchDir() || undefined);
+  }
+  /** OTA: boards announcing themselves on the network (mDNS discovery of arduino-cli) or an address typed in. */
+  async function ota(): Promise<void> {
+    const f = needFqbn();
+    if (!f) return;
+    if (!(await hasTool('arduino-cli'))) { notify('arduino-cli не найден в PATH', { kind: 'warn' }); return; }
+    status.textContent = 'ищу платы в сети…';
+    const found = networkPorts((await ipc.exec('arduino-cli', ['board', 'list', '--format', 'json'], undefined, 30000).catch(() => ({ stdout: '' }))).stdout);
+    status.textContent = connected ? `${portSel.value} @ ${baudSel.value}` : 'не подключено';
+    const items: PickItem<string>[] = [...found.map((p) => ({ label: p.address, description: p.label, value: p.address })), { label: 'Ввести адрес или имя вручную…', value: '' }];
+    const hit = await quickPick(items, { placeholder: found.length ? 'Плата для прошивки по воздуху' : 'Плат в сети не найдено: введите адрес вручную' });
+    if (!hit) return;
+    const addr = hit.value || (await inputBox({ title: 'IP-адрес или имя платы (esp32.local)', placeholder: '192.168.1.50' }))?.trim();
+    if (!addr) return;
+    const pw = await inputBox({ title: 'Пароль OTA (пусто — без пароля)', password: true });
+    if (pw === undefined) return;
+    await disconnect();
+    await cli(['compile', '--upload', '--fqbn', f, '--port', addr, '--protocol', 'network', ...(pw ? ['--upload-field', `password=${pw}`] : []), sketchDir()]);
   }
   const fwBar = h('div.serial-bar', null,
     h('b.small', null, 'Прошивка'), fqbn,
@@ -182,9 +263,10 @@ function render(host: HTMLElement): () => void {
       if (!tool) { notify('esptool не найден: pip install esptool', { kind: 'warn' }); return; }
       await disconnect();
       await fw(tool, ['--port', portSel.value, 'write_flash', addr, file]);
-    } }, 'esptool: записать .bin'));
+    } }, 'esptool: записать .bin'),
+    h('button.btn', { title: 'Прошивка по Wi-Fi: плата находится по mDNS (arduino-cli)', onclick: () => void ota() }, 'OTA по Wi-Fi'));
 
-  const un = on<{ id: string; data: string }>('serial-data', (p) => { if (p.id === id) onData(p.data); });
+  const un = on<{ id: string; data: string; dropped?: number }>('serial-data', (p) => { if (p.id === id) onData(p.data, p.dropped ?? 0); });
   const unExit = on<{ id: string; error: string | null }>('serial-exit', (p) => {
     if (p.id !== id || !connected) return;
     connected = false;
@@ -199,6 +281,9 @@ function render(host: HTMLElement): () => void {
     h('div.serial-bar', null, portSel, h('button.btn', { title: 'Обновить список портов', onclick: () => void refreshPorts() }, '↻'), baudSel, connectBtn,
       h('button.btn', { onclick: () => { lines.length = 0; carry = ''; logEl.textContent = ''; plot.clear(); } }, 'Очистить'), status),
     fwBar,
+    h('div.serial-bar', null, h('b.small', null, 'Декодер падений'), elfInput, h('button.btn', { onclick: async () => { const { open } = await import('@tauri-apps/plugin-dialog'); const f = await open({ multiple: false, title: 'Файл .elf', filters: [{ name: 'elf', extensions: ['elf'] }] }); if (typeof f === 'string') { elfInput.value = f; localStorage.setItem('lumen.serial.elf', f); } } }, 'Обзор…'),
+      h('button.btn', { title: 'Вставьте строку Backtrace из лога', onclick: async () => { const t = await inputBox({ title: 'Строка Backtrace или адреса', placeholder: 'Backtrace: 0x400d1234:0x3ffb1f50 …' }); const a = t ? crashAddresses(t.includes('Backtrace') ? t : `Backtrace: ${t}`) : []; if (a.length) void decode(a, 'Ручная расшифровка'); } }, 'Вставить адреса')),
+    crashBox,
     h('div.serial-body', null, h('div.serial-col', null, logEl, h('div.serial-bar', null, input, eolSel)), plot.canvas)));
   void refreshPorts();
 

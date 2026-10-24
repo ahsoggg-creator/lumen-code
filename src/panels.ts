@@ -183,10 +183,10 @@ function chain(kind: 'ps' | 'cmd' | 'sh', cmds: string[]): string {
   return s;
 }
 
-export async function runInTerminal(command: string | string[], opts: { name?: string; cwd?: string; reuse?: boolean } = {}): Promise<void> {
+export async function runInTerminal(command: string | string[], opts: { name?: string; cwd?: string; reuse?: boolean } = {}): Promise<number | null> {
   let t = opts.reuse !== false ? terms.find((x) => x.name === (opts.name ?? 'Запуск') && x.alive) : undefined;
   t ??= (await newTerminal({ name: opts.name ?? 'Запуск', cwd: opts.cwd })) ?? undefined;
-  if (!t) return;
+  if (!t) return null;
   selectTerm(t);
   shell.showPanel('terminal');
   const kind = (PROFILES[t.profile] ?? PROFILES.powershell!).kind;
@@ -197,6 +197,7 @@ export async function runInTerminal(command: string | string[], opts: { name?: s
   }
   await ipc.termWrite(t.ptyId, `${cmd}\r`);
   t.xterm.focus();
+  return t.ptyId;
 }
 
 export function sendToTerminal(text: string): void { if (activeTerm) void ipc.termWrite(activeTerm.ptyId, text); }

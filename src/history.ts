@@ -2,14 +2,16 @@ import { commands } from './commands';
 import { docs, editors, type Doc } from './editor';
 import { errText, ipc } from './ipc';
 import { cfg } from './settings';
-import { notify, quickPick, type PickItem } from './ui';
+import { sensitivePath } from './trust';
+import { confirmDialog, notify, quickPick, type PickItem } from './ui';
 import { basename } from './util';
 
 const PAUSE_MS = 15000;
 const timers = new Map<string, number>();
 
 const store = (d: Doc): void => {
-  if (!d.path || !cfg('history.enabled')) return;
+  // Secrets and big files never reach the (unencrypted) history; the backend applies the same rule.
+  if (!d.path || !cfg('history.enabled') || sensitivePath(d.path) || d.model.getValueLength() > 5 * 1024 * 1024) return;
   void ipc.historySave(d.path, d.model.getValue()).catch(() => undefined);
 };
 
@@ -64,6 +66,21 @@ export function registerHistory(): void {
         doc.model.pushEditOperations([], [{ range: doc.model.getFullModelRange(), text: v.text }], () => null);
         notify(`Версия от ${when(v.ts)} возвращена (Ctrl+Z отменит)`);
       } catch (e) { notify(errText(e), { kind: 'error' }); }
+    },
+  });
+  commands.register({
+    id: 'history.clearFile', title: 'Машина времени: очистить историю этого файла', category: 'Файл',
+    run: async () => {
+      const doc = activeSavedDoc();
+      if (!doc || !(await confirmDialog('Очистить историю', `Удалить все сохранённые версии «${doc.name}»? Это нельзя отменить.`, 'Очистить', true))) return;
+      try { notify(`Удалено версий: ${await ipc.historyClear(doc.path!)}`); } catch (e) { notify(errText(e), { kind: 'error' }); }
+    },
+  });
+  commands.register({
+    id: 'history.clearAll', title: 'Машина времени: очистить всю историю', category: 'Файл',
+    run: async () => {
+      if (!(await confirmDialog('Очистить всю историю', 'Удалить сохранённые версии всех файлов? Это нельзя отменить.', 'Очистить всё', true))) return;
+      try { notify(`Удалено версий: ${await ipc.historyClearAll()}`); } catch (e) { notify(errText(e), { kind: 'error' }); }
     },
   });
 }

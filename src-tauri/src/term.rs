@@ -18,6 +18,13 @@ pub struct Terms {
     map: Mutex<HashMap<u32, Term>>,
 }
 
+impl Terms {
+    /// Process id of the shell behind a terminal (for the run-time performance HUD).
+    pub fn pid_of(&self, id: u32) -> Option<u32> {
+        self.map.lock().unwrap().get(&id).and_then(|t| t.child.process_id())
+    }
+}
+
 /// Splits off an incomplete UTF-8 tail so a multi-byte character is never cut between two events.
 fn take_valid(buf: &mut Vec<u8>) -> String {
     let valid = match std::str::from_utf8(buf) {

@@ -4,7 +4,7 @@ import { errText, ipc } from '../ipc';
 import { cfg } from '../settings';
 import { dirname, isUnder, join, normalizePath, relative, key } from '../util';
 import type { ToolDef } from './core';
-import { dangerousCommand } from './danger';
+import { dangerousCommand, dangerousMcp } from './danger';
 import { outlineText } from '../structure';
 import { sensitivePath } from '../trust';
 import { callMcp, isMcpTool } from './mcp';
@@ -27,6 +27,7 @@ export function needsApproval(name: string, args: Record<string, unknown> = {}):
   const d = dangerOf(name);
   if (name === 'read_file' && sensitivePath(String(args.path ?? ''))) return true;
   if (name === 'run_command' && dangerousCommand(String(args.command ?? '')).length) return true; // asked even with auto-approve on
+  if (isMcpTool(name) && dangerousMcp(name, args).length) return true;
   if (d === 'read') return !cfg('ai.autoApproveReads');
   if (d === 'edit') return !cfg('ai.autoApproveEdits');
   return !cfg('ai.autoApproveCommands');
@@ -92,7 +93,7 @@ export async function previewTool(name: string, a: Record<string, unknown>): Pro
     const note = [a.cwd ? `в папке ${a.cwd}` : '', warn.length ? `⚠ ОСТОРОЖНО: ${warn.join('; ')}` : ''].filter(Boolean).join(' · ');
     return { title: 'Выполнить команду', lines: [{ kind: ' ', text: String(a.command ?? '') }], note: note || undefined };
   }
-  if (isMcpTool(name)) return { title: `Вызвать MCP-инструмент ${name}`, lines: JSON.stringify(a, null, 2).split('\n').slice(0, 40).map((t) => ({ kind: ' ' as const, text: t })) };
+  if (isMcpTool(name)) return { title: `Вызвать MCP-инструмент ${name}`, note: dangerousMcp(name, a).length ? `⚠ ОСТОРОЖНО: ${dangerousMcp(name, a).join('; ')}` : undefined, lines: JSON.stringify(a, null, 2).split('\n').slice(0, 40).map((t) => ({ kind: ' ' as const, text: t })) };
   const path = String(a.path ?? '');
   if (name === 'write_file') {
     const content = String(a.content ?? '');

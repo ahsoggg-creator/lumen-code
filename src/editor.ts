@@ -492,7 +492,12 @@ function docsOwn(m: Mn.editor.ITextModel): boolean {
 }
 
 // ================================================================= editor area
-export interface OpenOpts { line?: number; col?: number; endLine?: number; endCol?: number; preview?: boolean; focus?: boolean; group?: number }
+/** Files that open in a custom view (tables, …) instead of the text editor, unless `asText` is set. */
+export interface FileViewer { match: (path: string) => boolean; open: (path: string) => void }
+const fileViewers: FileViewer[] = [];
+export const registerFileViewer = (v: FileViewer): void => { fileViewers.push(v); };
+
+export interface OpenOpts { asText?: boolean; line?: number; col?: number; endLine?: number; endCol?: number; preview?: boolean; focus?: boolean; group?: number }
 
 class EditorArea {
   readonly el = h('div.groups');
@@ -620,6 +625,8 @@ class EditorArea {
       if (o.preview === false) existing.t.preview = false;
       existing.g.show(existing.t, o.focus !== false);
     } else {
+      const viewer = o.asText ? undefined : fileViewers.find((v) => v.match(path));
+      if (viewer) { viewer.open(path); return null; }
       let r: Doc | 'binary';
       try { r = await docs.open(path); } catch (e) { notify(`Не удалось открыть файл: ${errText(e)}`, { kind: 'error' }); return null; }
       if (r === 'binary') { this.openBinary(path); return null; }
@@ -650,6 +657,17 @@ class EditorArea {
     const hit = this.findTab(`view:${spec.key}`);
     if (hit) { this.setActive(hit.g); hit.g.show(hit.t); return; }
     this.addTab(this.activeGroup, { id: uid('tab'), kind: 'view', view: spec, preview: false });
+  }
+
+  /** Opens a view in the neighbouring group (created when there is only one) and keeps the focus where it was. */
+  openViewBeside(spec: ViewSpec): void {
+    const hit = this.findTab(`view:${spec.key}`);
+    if (hit) { hit.g.show(hit.t, false); return; }
+    const src = this.activeGroup;
+    const target = this.groups.find((g) => g !== src) ?? this.addGroup(this.groups.indexOf(src));
+    this.groups.forEach((x) => { x.el.style.flex = ''; });
+    this.addTab(target, { id: uid('tab'), kind: 'view', view: spec, preview: false }, false);
+    this.setActive(src);
   }
 
   openDiff(spec: DiffSpec): void {

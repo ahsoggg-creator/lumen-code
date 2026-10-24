@@ -17,6 +17,9 @@ const LANGS = ['python', 'javascript', 'typescript', 'lua'];
 const TIMEOUT_MS = 4000;
 const DELAY_MS = 600;
 const MARK = '@@LUMEN@@';
+const MEM_MB = 512;
+let lastJob: string | null = null;
+let jobSeq = 0;
 
 // ------------------------------------------------------------------ runners
 
@@ -247,7 +250,13 @@ async function runExternal(program: string, runner: string, ext: string, text: s
   const codePath = join(dir, `code.${ext}`);
   await ipc.writeFile(codePath, text);
   const args = ext === 'py' ? ['-X', 'utf8', runnerPath, codePath, realPath] : [runnerPath, codePath];
-  const r = await ipc.exec(program, args, dirname(realPath), TIMEOUT_MS, { PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }).catch((e) => ({ code: -1, stdout: '', stderr: errText(e) }));
+  // A newer run replaces the previous one: its whole process tree is killed (Job Object), so typing never piles up processes.
+  if (lastJob) void ipc.sandboxCancel(lastJob).catch(() => undefined);
+  const job = `scratch-${++jobSeq}`;
+  lastJob = job;
+  const r = await ipc.sandboxRun(job, program, args, dirname(realPath), { PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }, TIMEOUT_MS, MEM_MB).catch((e) => ({ code: -1, stdout: '', stderr: errText(e) }));
+  if (lastJob === job) lastJob = null;
+  if (/\[cancelled\]/.test(r.stderr)) return { lines: new Map(), error: null };
   const at = r.stdout.lastIndexOf(MARK);
   if (at < 0) {
     const msg = /time|таймаут|превыш/i.test(r.stderr) ? `время выполнения вышло (${TIMEOUT_MS / 1000} с)` : (r.stderr.trim().split('\n').pop() || 'нет результата');
@@ -306,6 +315,7 @@ async function toggle(): Promise<void> {
   if (!d || !LANGS.includes(d.model.getLanguageId())) { notify('Песочница работает для Python, JavaScript, TypeScript и Lua', { kind: 'warn' }); return; }
   if (enabled.has(d.id)) {
     enabled.delete(d.id);
+    if (lastJob) void ipc.sandboxCancel(lastJob).catch(() => undefined);
     results.delete(d.model.uri.toString());
     hintsChanged.fire();
     paintStatus();
@@ -343,7 +353,7 @@ export function registerScratch(): void {
   for (const l of LANGS) mo.languages.registerInlayHintsProvider(l, provider);
 
   docs.onChange.on((d) => { if (enabled.has(d.id)) schedule(d.id); });
-  docs.onClose.on((d) => { enabled.delete(d.id); results.delete(d.model.uri.toString()); });
+  docs.onClose.on((d) => { if (enabled.delete(d.id) && lastJob) void ipc.sandboxCancel(lastJob).catch(() => undefined); results.delete(d.model.uri.toString()); });
   editors.activeChanged.on(paintStatus);
   status = shell.statusItem({ id: 'scratch', align: 'right', priority: 40, text: 'Песочница', tooltip: 'Выполнять код на лету и показывать значения справа от строк', command: 'scratch.toggle' });
   paintStatus();

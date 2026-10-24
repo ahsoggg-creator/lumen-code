@@ -39,7 +39,7 @@ async function boot(): Promise<void> {
   ]);
   const { registerBuiltinPlugins2 } = await import('./plugins/builtin2');
   const { registerAssoc, autoRegisterAssoc } = await import('./assoc');
-  const [{ registerHistory }, { registerSerial }, { registerStructure }, { registerScratch }, { registerMcpCatalog }] = await Promise.all([import('./history'), import('./serial'), import('./structure'), import('./scratch'), import('./mcpcatalog')]);
+  const [{ registerHistory }, { registerSerial }, { registerStructure }, { registerScratch }, { registerMcpCatalog }, { registerDbView }, { registerHttpClient }] = await Promise.all([import('./history'), import('./serial'), import('./structure'), import('./scratch'), import('./mcpcatalog'), import('./dbview'), import('./httpclient')]);
   const { registerLsp } = await import('./lsp');
   const { registerVsx } = await import('./views/vsx');
   const { applyAll: applyVscodeExts } = await import('./vscode/ext');
@@ -69,6 +69,8 @@ async function boot(): Promise<void> {
   registerStructure();
   registerScratch();
   registerMcpCatalog();
+  registerDbView();
+  registerHttpClient();
   if (!import.meta.env.DEV) void autoRegisterAssoc();
   registerVsx();
   registerPalette();

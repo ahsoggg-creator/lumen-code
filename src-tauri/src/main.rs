@@ -4,14 +4,18 @@ mod adapters;
 mod ast;
 mod assoc;
 mod dap;
+mod db;
+mod decode;
 mod fsx;
 mod git;
 mod history;
 mod lsp;
 mod mcp;
 mod net;
+mod perf;
 mod python;
 mod rpc;
+mod sandbox;
 mod search;
 mod serial;
 mod tasks;
@@ -70,6 +74,8 @@ fn main() {
         .manage(mcp::Mcps::default())
         .manage(history::History::default())
         .manage(serial::Serials::default())
+        .manage(sandbox::Sandboxes::default())
+        .manage(perf::Perf::default())
         .setup(|app| {
             if std::env::var_os("LUMEN_HEADLESS").is_some() {
                 if let Some(w) = app.get_webview_window("main") {
@@ -145,6 +151,18 @@ fn main() {
             history::history_save,
             history::history_list,
             history::history_get,
+            history::history_clear,
+            history::history_clear_all,
+            sandbox::sandbox_run,
+            sandbox::sandbox_cancel,
+            db::db_tables,
+            db::db_page,
+            db::db_query,
+            db::db_exec,
+            db::db_update_cell,
+            decode::decode_backtrace,
+            perf::term_stats,
+            net::http_send,
             serial::serial_ports,
             serial::serial_open,
             serial::serial_write,

@@ -101,7 +101,7 @@ export class AbortHandle {
 }
 
 export async function streamChat(p: Provider, system: string, msgs: Msg[], tools: ToolDef[], h: StreamHandlers, abort: AbortHandle): Promise<StreamResult> {
-  if (p.kind === 'claude-cli') return streamClaudeCli(p, system, msgs, h, abort);
+  if (p.kind === 'claude-cli') return streamClaudeCli(p, system, msgs, tools.length > 0, h, abort);
   wire();
   const key = await apiKey(p);
   if (!key && p.needsKey !== false) throw new Error(`Не задан API-ключ для «${p.name}». Откройте панель ИИ → шестерёнка.`);
@@ -173,29 +173,53 @@ export async function streamChat(p: Provider, system: string, msgs: Msg[], tools
   return { text, calls, stop };
 }
 
+/** Credential files Claude Code must not read (same idea as the agent's own `sensitivePath` prompt). */
+const SECRET_READS = ['**/.env', '**/.env.*', '**/*.pem', '**/*.key', '**/*.pfx', '**/*.p12', '**/id_rsa*', '**/id_ed25519*', '**/.npmrc', '**/.pypirc', '**/.netrc', '**/.git-credentials', '**/credentials', '**/secrets*'].map((g) => `Read(${g})`).join(',');
+
 const psq = (s: string): string => `'${s.replace(/'/g, "''")}'`;
 
 /** Chat through the user's own Claude Code login (subscription): the official `claude -p` CLI, no tools, history passed as text. */
-async function streamClaudeCli(p: Provider, system: string, msgs: Msg[], h: StreamHandlers, abort: AbortHandle): Promise<StreamResult> {
+async function streamClaudeCli(p: Provider, system: string, msgs: Msg[], agent: boolean, h: StreamHandlers, abort: AbortHandle): Promise<StreamResult> {
   const dir = `${app.paths.config}\\claude-chat`;
   await ipc.mkdir(dir);
   const turns = msgs.filter((m): m is Extract<Msg, { role: 'user' | 'assistant' }> => m.role !== 'tool').map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.text}`);
-  const prompt = `<instructions>\n${system}\nNo tools are available in this chat: answer from the provided context only.\n</instructions>\n\n${turns.join('\n\n')}\n\nAssistant:`;
+  // Agent mode: Claude Code's own tools work in the open project; the "agent rights" settings decide which exist (headless mode cannot ask).
+  let root = agent ? app.root : null;
+  // Reading follows the "read without asking" setting too; Bash is offered only when commands are auto-approved and is NOT filtered by Lumen's danger list.
+  const allowed = root ? [...(cfg('ai.autoApproveReads') ? ['Read', 'Glob', 'Grep'] : []), ...(cfg('ai.autoApproveEdits') ? ['Edit', 'Write'] : []), ...(cfg('ai.autoApproveCommands') ? ['Bash'] : [])] : [];
+  if (!allowed.length) root = null;
+  const toolNote = root
+    ? `You work in the project folder ${root} with these tools: ${allowed.join(', ')}. Use them to read and change files there directly instead of pasting code into the chat.${cfg('ai.autoApproveEdits') ? '' : ' Editing is disabled (the user has not allowed it): show changes as code blocks.'}`
+    : `No tools are available in this chat: answer from the provided context only.${agent ? ' No project folder is open, so files cannot be changed: tell the user to open a folder (File > Open Folder).' : ''}`;
+  const prompt = `<instructions>\n${system}\n${toolNote}\n</instructions>\n\n${turns.join('\n\n')}\n\nAssistant:`;
   const file = `${dir}\\prompt-${uid('p')}.txt`;
   await ipc.writeFile(file, prompt);
   const utf8 = '$e=[Text.UTF8Encoding]::new($false);$OutputEncoding=$e;[Console]::OutputEncoding=$e;';
-  const cmd = `${utf8}Get-Content -Raw -Encoding UTF8 -LiteralPath ${psq(file)} | claude -p --output-format stream-json --verbose --include-partial-messages --no-session-persistence --tools '' --setting-sources '' --strict-mcp-config --disable-slash-commands --model ${psq(p.model || 'sonnet')}`;
+  const cmd = `${utf8}Get-Content -Raw -Encoding UTF8 -LiteralPath ${psq(file)} | claude -p --output-format stream-json --verbose --include-partial-messages --no-session-persistence --tools ${allowed.length ? psq(allowed.join(',')) : `'""'`} ${root ? "--permission-mode acceptEdits " : ''}${allowed.includes('Bash') ? "--allowedTools Bash " : ''}${allowed.length ? `--disallowedTools ${psq(SECRET_READS)} ` : ''}--setting-sources user --strict-mcp-config --disable-slash-commands --model ${psq(p.model || 'sonnet')}`;
   let text = '';
   let err = '';
   let failed = '';
   const task = runTask('powershell', ['-NoProfile', '-NonInteractive', '-Command', cmd], {
-    cwd: dir,
+    cwd: root ?? dir,
     onLine: (line, stream) => {
       if (stream === 'stderr') { err += `${line}\n`; return; }
-      let j: { type?: string; event?: { type?: string; delta?: { type?: string; text?: string } }; is_error?: boolean; result?: string };
+      let j: { type?: string; event?: { type?: string; delta?: { type?: string; text?: string } }; is_error?: boolean; result?: string; message?: { content?: { type?: string; name?: string; input?: Record<string, unknown> }[] } };
       try { j = JSON.parse(line); } catch { return; }
       if (j.type === 'stream_event' && j.event?.type === 'content_block_delta' && j.event.delta?.type === 'text_delta' && j.event.delta.text) { text += j.event.delta.text; h.onText?.(j.event.delta.text); }
-      else if (j.type === 'result' && j.is_error) failed = j.result ?? 'ошибка Claude Code';
+      else if (j.type === 'assistant') {
+        for (const b of j.message?.content ?? []) {
+          if (b.type !== 'tool_use') continue;
+          const i = b.input ?? {};
+          const what = String(i.file_path ?? i.path ?? i.pattern ?? i.command ?? '').slice(0, 120);
+          const note = `
+
+> ⚙ ${b.name}${what ? `: \`${what}\`` : ''}
+
+`;
+          text += note;
+          h.onText?.(note);
+        }
+      } else if (j.type === 'result' && j.is_error) failed = j.result ?? 'ошибка Claude Code';
     },
   });
   abort.onAbort(task.kill);

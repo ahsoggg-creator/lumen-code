@@ -21,6 +21,10 @@ writeFileSync(join(work, 'proj', 'test.nix'), ['# a comment', '{ pkgs ? import <
 writeFileSync(join(work, 'proj', 'bad.py'), ['import os', '', 'undefined_name', ''].join(String.fromCharCode(10)));
 writeFileSync(join(work, 'proj', 'hello.rs'), ['fn main() {', '    let total = 40 + 2;', '    println!("{}", total);', '}', ''].join(String.fromCharCode(10)));
 writeFileSync(join(work, 'proj', 'README.md'), '# Demo\n\nSome **markdown**.\n');
+writeFileSync(join(work, 'proj', 'data.csv'), 'name;score\nanna;10\nboris;9\nclara;100\n');
+writeFileSync(join(work, 'proj', 'slow.py'), 'import time\nx = [0] * 2_000_000\ntime.sleep(2)\nprint("done")\n');
+try { execFileSync('python', ['-c', "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute('create table users(id integer primary key, name text)'); c.executemany('insert into users(name) values (?)', [('alice',),('bob',),('carol',)]); c.commit()", join(work, 'proj', 'test.sqlite')], { stdio: 'ignore' }); } catch { /* the database check is skipped without Python */ }
+writeFileSync(join(work, 'proj', 'api.http'), 'GET https://api.github.com/zen\n');
 
 // A throw-away venv with debugpy so the debugger test does not touch the user's Python.
 const venv = join(work, 'venv');
@@ -265,6 +269,50 @@ try {
   const outline = await tcall('ast_outline', { text: 'def f(a):\n    pass\n', lang: 'python' });
   check('tree-sitter outline', outline.includes('def f(a)'), outline.slice(0, 120));
   check('serial ports listing works', (await tcall('serial_ports', {})).startsWith('['));
+
+  // sandbox: a runaway process is killed with its whole tree at the timeout
+  const t1 = Date.now();
+  const sb = JSON.parse(await tcall('sandbox_run', { id: 'smoke', program: 'python', args: ['-c', 'while True: pass'], cwd: null, env: {}, timeoutMs: 700, memMb: 256 }));
+  check('sandbox: infinite loop is killed at the timeout', Date.now() - t1 < 4000 && /timed out/.test(sb.stderr), `${Date.now() - t1} ms`);
+
+  const openFile = async (f) => { await tcall('plugin:event|emit', { event: 'open-paths', payload: { paths: [join(work, 'proj', f)] } }); };
+
+  // database viewer
+  await openFile('test.sqlite');
+  check('sqlite opens as a table', await waitFor('document.querySelectorAll(".dbv-grid tbody tr").length === 3', 15000), String(await ev('document.querySelectorAll(".dbv-grid tbody tr").length')));
+  await ev('(() => { const i = document.querySelector(".dbv-bar input.field"); i.value = "bo"; i.dispatchEvent(new Event("input", { bubbles: true })); })()');
+  check('table filter works', await waitFor('document.querySelectorAll(".dbv-grid tbody tr").length === 1', 8000));
+
+  // csv viewer
+  await openFile('data.csv');
+  check('csv opens as a table', await waitFor('document.querySelectorAll(".dbv-grid tbody tr").length === 3', 15000));
+  await ev('[...document.querySelectorAll(".dbv-grid th")].find(t=>t.textContent.startsWith("score"))?.click()');
+  check('csv sorts numerically', await waitFor('document.querySelector(".dbv-grid tbody tr td")?.textContent === "boris"', 5000), String(await ev('[...document.querySelectorAll(".dbv-grid tbody tr")].map(r=>r.textContent).join("|")')));
+
+  // http client
+  await openFile('api.http');
+  check('http: code lens offers to send', await waitFor('[...document.querySelectorAll(".codelens-decoration a")].some(a=>a.textContent.includes("Отправить"))', 15000));
+  // Monaco acts on real mouse events over the lens, not on a synthetic click.
+  const lens = await ev('(() => { const r = [...document.querySelectorAll(".codelens-decoration a")].find(a=>a.textContent.includes("Отправить"))?.getBoundingClientRect(); return r ? JSON.stringify({ x: r.x + r.width / 2, y: r.y + r.height / 2 }) : ""; })()');
+  if (lens) {
+    const { x, y } = JSON.parse(lens);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+  }
+  check('http: response shows status and timing', await waitFor('(document.querySelector(".http-line")?.textContent ?? "").includes("200")', 15000), String(await ev('document.querySelector(".http-resp")?.textContent?.slice(0,120)')));
+  check('http: body is shown', await waitFor('(document.querySelector(".http-text")?.textContent ?? "").trim().length > 5', 5000));
+
+  // run-time HUD
+  await openFile('slow.py');
+  await waitFor('[...document.querySelectorAll(".tab.active .tab-label")].some(e=>e.textContent==="slow.py")', 10000);
+  await ev('document.querySelector(".command-center")?.click()');
+  await waitFor('!!document.querySelector(".qi-input")');
+  await ev('(() => { const i = document.querySelector(".qi-input"); i.value = ">Запустить без отладки"; i.dispatchEvent(new Event("input", { bubbles: true })); })()');
+  await waitFor('document.querySelectorAll(".qi-item").length >= 1');
+  await ev('document.querySelector(".qi-input").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))');
+  check('run HUD shows time and memory', await waitFor('[...document.querySelectorAll(".status-item")].some(e=>/(✔|▶) .*МБ/.test(e.textContent))', 40000), String(await ev('[...document.querySelectorAll(".status-item")].map(e=>e.textContent).join("|")')));
+  check('run HUD finishes with a summary', await waitFor('[...document.querySelectorAll(".status-item")].some(e=>/✔ .*пик/.test(e.textContent))', 40000));
 
   ws.close();
 } catch (e) {

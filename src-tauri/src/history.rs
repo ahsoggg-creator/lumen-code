@@ -148,12 +148,44 @@ fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
+/// Files that usually hold secrets never enter the history (it is an unencrypted database), nor do big ones.
+const MAX_BYTES: usize = 5 * 1024 * 1024;
+
+pub fn excluded(path: &str, len: usize) -> bool {
+    if len > MAX_BYTES {
+        return true;
+    }
+    let name = path.replace('/', "\\").rsplit('\\').next().unwrap_or("").to_lowercase();
+    name == ".env"
+        || name.starts_with(".env.")
+        || name.ends_with(".env")
+        || [".pem", ".key", ".pfx", ".p12", ".kdbx", ".ppk", ".jks", ".keystore"].iter().any(|e| name.ends_with(e))
+        || [".npmrc", ".pypirc", ".netrc", ".git-credentials", "credentials", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"].contains(&name.as_str())
+        || name.starts_with("secret")
+}
+
 #[tauri::command(async)]
 pub fn history_save(h: State<'_, History>, path: String, content: String) -> Result<bool, String> {
-    if content.len() > 5_000_000 {
+    if excluded(&path, content.len()) {
         return Ok(false);
     }
     with_db(&h, |db| save(db, &path, &content, now_ms()))
+}
+
+/// Deletes every stored version of one file; returns how many were removed.
+#[tauri::command(async)]
+pub fn history_clear(h: State<'_, History>, path: String) -> Result<usize, String> {
+    with_db(&h, |db| db.execute("DELETE FROM snap WHERE path=?1", [key(&path)]).map_err(|e| e.to_string()))
+}
+
+/// Deletes the whole history and shrinks the database file.
+#[tauri::command(async)]
+pub fn history_clear_all(h: State<'_, History>) -> Result<usize, String> {
+    with_db(&h, |db| {
+        let n = db.execute("DELETE FROM snap", []).map_err(|e| e.to_string())?;
+        let _ = db.execute_batch("VACUUM");
+        Ok(n)
+    })
 }
 
 #[tauri::command(async)]
@@ -195,6 +227,25 @@ mod tests {
         assert!(keyframes >= 2);
         let total: i64 = db.query_row("SELECT SUM(LENGTH(data)) FROM snap", [], |r| r.get(0)).unwrap();
         assert!(total < texts.iter().map(|t| t.len() as i64).sum::<i64>() / 4);
+    }
+
+    #[test]
+    fn secrets_and_big_files_are_not_recorded() {
+        for p in [r"C:\p\.env", r"C:\p\.env.local", "a/b/server.pem", "k.KEY", "x.pfx", r"C:\u\.ssh\id_rsa", "secrets.json"] {
+            assert!(excluded(p, 10), "{p}");
+        }
+        assert!(excluded("big.txt", MAX_BYTES + 1));
+        assert!(!excluded(r"C:\p\main.py", 10) && !excluded("environment.ts", 10) && !excluded("keys.ts", 10));
+    }
+
+    #[test]
+    fn clearing_removes_only_that_file() {
+        let db = mem();
+        save(&db, "a", "1", 1).unwrap();
+        save(&db, "b", "2", 2).unwrap();
+        assert_eq!(db.execute("DELETE FROM snap WHERE path=?1", [key("A")]).unwrap(), 1);
+        let n: i64 = db.query_row("SELECT COUNT(*) FROM snap", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
     }
 
     #[test]

@@ -98,6 +98,66 @@ pub fn http_request(req: HttpReq) -> Result<HttpResp, String> {
     Ok(HttpResp { status, body })
 }
 
+#[derive(Deserialize)]
+pub struct SendReq {
+    method: String,
+    url: String,
+    #[serde(default)]
+    headers: Vec<(String, String)>,
+    body: Option<String>,
+    timeout_secs: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct SendResp {
+    status: u16,
+    reason: String,
+    headers: Vec<(String, String)>,
+    body: String,
+    size: usize,
+    time_ms: u64,
+    truncated: bool,
+}
+
+const SEND_BODY_CAP: usize = 5 * 1024 * 1024;
+
+/// REST-client request: any method and header list, with status line, headers, size and timing back (no browser CORS).
+#[tauri::command(async)]
+pub fn http_send(req: SendReq) -> Result<SendResp, String> {
+    use std::io::Read;
+    if !(req.url.starts_with("https://") || req.url.starts_with("http://")) {
+        return Err("поддерживаются только http:// и https://".into());
+    }
+    let method: ureq::http::Method = req.method.to_ascii_uppercase().parse().map_err(|_| format!("неизвестный метод {}", req.method))?;
+    let mut b = ureq::http::Request::builder().method(method).uri(&req.url);
+    for (k, v) in &req.headers {
+        b = b.header(k, v);
+    }
+    let agent = agent(Some(req.timeout_secs.unwrap_or(60).clamp(1, 600)));
+    let started = std::time::Instant::now();
+    let resp = match req.body.filter(|s| !s.is_empty()) {
+        Some(body) => agent.run(b.body(body.into_bytes()).map_err(|e| e.to_string())?),
+        None => agent.run(b.body(()).map_err(|e| e.to_string())?),
+    }
+    .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let headers = resp.headers().iter().map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("<binary>").to_string())).collect();
+    let mut bytes = Vec::new();
+    resp.into_body().into_reader().take(SEND_BODY_CAP as u64 + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    let time_ms = started.elapsed().as_millis() as u64;
+    let truncated = bytes.len() > SEND_BODY_CAP;
+    bytes.truncate(SEND_BODY_CAP);
+    Ok(SendResp {
+        status: status.as_u16(),
+        reason: status.canonical_reason().unwrap_or("").to_string(),
+        headers,
+        size: bytes.len(),
+        body: String::from_utf8_lossy(&bytes).into_owned(),
+        time_ms,
+        truncated,
+    })
+}
+
 #[derive(Default)]
 pub struct Streams(Mutex<HashMap<String, Arc<AtomicBool>>>);
 

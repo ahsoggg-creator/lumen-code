@@ -19,6 +19,11 @@ export interface Release { tag: string; version: string; notes: string; exe_url:
 export interface Sig { kind: string; name: string; signature: string; line: number; end_line: number; depth: number }
 export interface AstMatch { line: number; col: number; end_line: number; end_col: number; text: string; captures: [string, string][] }
 export interface Version { id: number; ts: number; size: number }
+export interface Frame { addr: string; func: string; file: string; line: number }
+export interface DbPage { columns: string[]; rows: unknown[][]; rowids: number[]; total: number; editable: boolean }
+export interface DbQuery { columns: string[]; rows: unknown[][]; truncated: boolean }
+export interface SendResp { status: number; reason: string; headers: [string, string][]; body: string; size: number; time_ms: number; truncated: boolean }
+export interface TermStats { running: boolean; procs: number; mem_mb: number; cpu: number }
 export interface HttpReq { url: string; method?: string; headers?: Record<string, string>; body?: string }
 
 export const ipc = {
@@ -59,6 +64,20 @@ export const ipc = {
   historySave: (path: string, content: string) => invoke<boolean>('history_save', { path, content }),
   historyList: (path: string) => invoke<Version[]>('history_list', { path }),
   historyGet: (id: number) => invoke<string>('history_get', { id }),
+  historyClear: (path: string) => invoke<number>('history_clear', { path }),
+  historyClearAll: () => invoke<number>('history_clear_all'),
+  sandboxRun: (id: string, program: string, args: string[], cwd: string | undefined, env: Record<string, string>, timeoutMs: number, memMb: number) =>
+    invoke<ExecOut>('sandbox_run', { id, program, args, cwd: cwd ?? null, env, timeoutMs, memMb }),
+  sandboxCancel: (id: string) => invoke<void>('sandbox_cancel', { id }),
+  dbTables: (path: string) => invoke<{ name: string; kind: string }[]>('db_tables', { path }),
+  dbPage: (path: string, table: string, filter: string, sort: string | null, desc: boolean, limit: number, offset: number) => invoke<DbPage>('db_page', { path, table, filter, sort, desc, limit, offset }),
+  dbQuery: (path: string, sql: string, limit: number) => invoke<DbQuery>('db_query', { path, sql, limit }),
+  dbExec: (path: string, sql: string) => invoke<number>('db_exec', { path, sql }),
+  dbUpdateCell: (path: string, table: string, rowid: number, column: string, value: string | null) => invoke<void>('db_update_cell', { path, table, rowid, column, value }),
+  decodeBacktrace: (elf: string, addrs: string[]) => invoke<Frame[]>('decode_backtrace', { elf, addrs }),
+  termStats: (id: number) => invoke<TermStats | null>('term_stats', { id }),
+  httpSend: (req: { method: string; url: string; headers: [string, string][]; body?: string; timeoutSecs?: number }) =>
+    invoke<SendResp>('http_send', { req: { method: req.method, url: req.url, headers: req.headers, body: req.body ?? null, timeout_secs: req.timeoutSecs ?? null } }),
   serialPorts: () => invoke<{ name: string; kind: string }[]>('serial_ports'),
   serialOpen: (id: string, port: string, baud: number) => invoke<void>('serial_open', { id, port, baud }),
   serialWrite: (id: string, data: string) => invoke<void>('serial_write', { id, data }),

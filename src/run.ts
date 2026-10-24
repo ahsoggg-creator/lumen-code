@@ -3,6 +3,7 @@ import { commands } from './commands';
 import { docs, editors } from './editor';
 import { ipc } from './ipc';
 import { runInTerminal } from './panels';
+import { monitorRun } from './perfhud';
 import { cfg } from './settings';
 import { ensureToolchain, langForPath, type LangDef } from './toolchains';
 import { notify } from './ui';
@@ -60,7 +61,8 @@ export async function runCurrent(): Promise<void> {
   const plan = await planRun(path);
   if (!plan) { notify(`Для «${basename(path)}» нет способа запуска. Добавьте команду в настройку run.commands, например {"${extname(path) || 'ext'}": "программа \\"\${file}\\""}.`, { kind: 'warn', timeout: 9000 }); return; }
   if (plan.lang && !(await ensureToolchain(plan.lang, `Чтобы запустить «${basename(path)}», нужен ${plan.lang.name}.`))) return;
-  await runInTerminal(plan.cmds, { name: 'Запуск', cwd: plan.cwd });
+  const pty = await runInTerminal(plan.cmds, { name: 'Запуск', cwd: plan.cwd });
+  if (pty !== null) monitorRun(pty);
 }
 
 export function registerRun(): void {

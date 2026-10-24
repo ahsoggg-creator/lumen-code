@@ -1,6 +1,6 @@
 [package]
 name = "lumen-code"
-version = "0.6.0"
+version = "0.7.0"
 description = "Fast, light, fully customizable code editor"
 edition = "2021"
 license = "MIT"
@@ -38,6 +38,8 @@ tree-sitter-rust = "0.24"
 tree-sitter-lua = "0.5"
 tree-sitter-go = "0.25"
 streaming-iterator = "0.1"
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_Security", "Win32_System_Threading"] }
 
 [profile.release]
 opt-level = "s"
