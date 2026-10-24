@@ -43,7 +43,7 @@ if (venvPy) {
 }
 
 const child = spawn(exe, [join(work, 'proj')], {
-  env: { ...process.env, APPDATA: appdata, LUMEN_HEADLESS: '1', WEBVIEW2_USER_DATA_FOLDER: join(work, 'webview'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
+  env: { ...process.env, APPDATA: appdata, LUMEN_HEADLESS: '1', LUMEN_TEST_REG: '1', WEBVIEW2_USER_DATA_FOLDER: join(work, 'webview'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
   stdio: 'ignore',
 });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

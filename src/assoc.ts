@@ -65,6 +65,8 @@ export function openAssociationsPage(): void {
       async function apply(): Promise<void> {
         try {
           await ipc.assocApply([...chosen], all, context);
+          try { localStorage.removeItem(OPT_OUT); } catch { /* ignore */ }
+          await ipc.assocSetDefault([...chosen]).catch(() => []);
           notify(`Готово: ${chosen.size} типов файлов. Чтобы двойной щелчок открывал Lumen Code, выберите его в «Приложения по умолчанию».`, { actions: [{ label: 'Открыть настройки Windows', run: () => void ipc.openDefaultApps() }], timeout: 12000 });
           await load();
         } catch (e) { notify(`Не удалось записать ассоциации: ${errText(e)}`, { kind: 'error' }); }
@@ -72,6 +74,7 @@ export function openAssociationsPage(): void {
 
       async function remove(): Promise<void> {
         await ipc.assocRemoveAll(all);
+        try { localStorage.setItem(OPT_OUT, '1'); } catch { /* ignore */ }
         notify('Ассоциации и пункты контекстного меню удалены');
         await load();
       }
@@ -85,13 +88,29 @@ export function registerAssoc(): void {
   commands.register({ id: 'file.associations', title: 'Ассоциации файлов: открывать .py и другие в Lumen Code…', category: 'Файл', run: () => openAssociationsPage() });
 }
 
-/** First launch: put Lumen Code into Explorer's "Open with" list for the known file types and add the context-menu item (HKCU only; the associations page undoes it). */
+const OPT_OUT = 'lumen.assoc.optout';
+const DEFAULTS_DONE = 'lumen.assoc.defaults';
+
+/** Types that should open in Lumen Code by default when nothing else owns them. */
+const DEFAULT_EXTS = ['txt', 'md', 'log', 'py', 'json', 'js', 'ts', 'yml', 'yaml', 'toml', 'ini', 'cfg', 'csv', 'xml', 'sql', 'rs', 'go', 'lua', 'sh', 'bat', 'ps1', 'http', 'rest'];
+
+/**
+ * On every start: make sure Lumen Code is in Explorer's "Open with" list, in the context menu of files and folders
+ * (HKCU only) and points at this executable, so the entries come back after a reinstall, a move or a cleanup.
+ * The associations page's "remove" is respected and switches this off.
+ */
 export async function autoRegisterAssoc(): Promise<void> {
-  const flag = 'lumen.assoc.auto';
-  try { if (localStorage.getItem(flag) || (await ipc.headless())) return; } catch { return; }
+  try { if (localStorage.getItem(OPT_OUT) || (await ipc.headless())) return; } catch { return; }
   try {
     const all = allKnownExts();
-    await ipc.assocApply(all, all, true);
-    localStorage.setItem(flag, '1');
+    const st = await ipc.assocStatus(['txt', 'md', 'py']);
+    if (!st.registered || !st.context_menu || !st.current || st.exts.length < 3) await ipc.assocApply(all, all, true);
+    if (!localStorage.getItem(DEFAULTS_DONE)) {
+      const blocked = await ipc.assocSetDefault(DEFAULT_EXTS);
+      localStorage.setItem(DEFAULTS_DONE, '1');
+      if (blocked.length) {
+        notify(`Для ${blocked.slice(0, 6).map((e) => `.${e}`).join(', ')}${blocked.length > 6 ? ' и др.' : ''} уже выбрана другая программа. Windows не даёт менять это из программ: выберите Lumen Code в «Приложения по умолчанию».`, { actions: [{ label: 'Открыть настройки Windows', run: () => void ipc.openDefaultApps() }], timeout: 15000 });
+      }
+    }
   } catch { /* retried on the next launch */ }
 }

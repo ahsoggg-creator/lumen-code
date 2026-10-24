@@ -105,6 +105,7 @@ fn main() {
             vsix::vsix_install,
             assoc::assoc_status,
             assoc::assoc_apply,
+            assoc::assoc_set_default,
             assoc::assoc_remove_all,
             assoc::open_default_apps,
             dap::dap_connect,
